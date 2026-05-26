@@ -186,12 +186,12 @@ export default function Landing() {
               code.
             </p>
 
-            <div className="mt-7 flex flex-wrap gap-3">
+            <div className="mt-7">
               <a
                 href="https://orthogonal.com"
                 target="_blank"
                 rel="noreferrer"
-                className="group flex h-9 items-center gap-1.5 rounded-full bg-accent px-4 text-[12.5px] font-medium text-bg transition-transform hover:scale-[1.02]"
+                className="group inline-flex h-9 items-center gap-1.5 rounded-full bg-accent px-4 text-[12.5px] font-medium text-bg transition-transform hover:scale-[1.02]"
               >
                 <span>Browse the catalog</span>
                 <ArrowUpRight
@@ -199,15 +199,6 @@ export default function Landing() {
                   strokeWidth={2.2}
                   className="transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
                 />
-              </a>
-              <a
-                href="https://orthogonal.com"
-                target="_blank"
-                rel="noreferrer"
-                className="flex h-9 items-center gap-1.5 rounded-full border border-border bg-bg/50 px-4 text-[12.5px] text-ink transition-colors hover:border-border-strong"
-              >
-                <span>Get $10 free credits</span>
-                <ArrowUpRight size={12} strokeWidth={1.8} className="text-ink-muted" />
               </a>
             </div>
           </div>
@@ -292,13 +283,14 @@ function ValueProp({
 
 function OrthogonalWordmark() {
   return (
-    <span className="flex items-center gap-2">
-      <span
-        aria-hidden
-        className="flex h-5 w-5 items-center justify-center rounded-full border border-current text-[10px] font-semibold tracking-tight"
-      >
-        O
-      </span>
+    <span className="flex items-center gap-2.5">
+      <img
+        src="/orthogonal-logo.png"
+        alt="Orthogonal"
+        width={22}
+        height={22}
+        className="h-[22px] w-[22px] rounded-md ring-1 ring-border"
+      />
       <span className="font-mono text-[14px] font-semibold uppercase tracking-[0.18em]">
         Orthogonal
       </span>
