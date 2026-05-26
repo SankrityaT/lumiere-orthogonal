@@ -8,7 +8,7 @@ interface OrthCallArgs {
   method?: "DELETE" | "PATCH";
 }
 
-const LLM_RESPONSE_CHAR_CAP = 4000;
+const LLM_RESPONSE_CHAR_CAP = 16000;
 
 /**
  * Escape hatch #2: direct passthrough to Orthogonal's /v1/run for any of

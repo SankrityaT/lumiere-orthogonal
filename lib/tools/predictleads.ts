@@ -104,11 +104,12 @@ const company_signals: ToolModule = {
         jobs: normalized.jobs.length,
         news: normalized.news.length,
       },
-      // Cap LLM-facing payload — full data goes to UI card only
+      // Pass full normalized data to LLM — the brief asks us to handle context
+      // bloat from API responses, so don't artificially shrink them here.
       sample: {
-        financing: normalized.financing.slice(0, 3),
-        jobs: normalized.jobs.slice(0, 3),
-        news: normalized.news.slice(0, 3),
+        financing: normalized.financing,
+        jobs: normalized.jobs,
+        news: normalized.news,
       },
       errors: errors.length ? errors : undefined,
     });
