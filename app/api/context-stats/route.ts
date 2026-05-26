@@ -67,47 +67,37 @@ export async function GET(req: NextRequest) {
     d.select().from(messages).where(eq(messages.conversationId, conversationId)),
   ]);
 
-  // Per-tool: tokenize raw response vs the compacted version sent to LLM
-  // (the compacted version lives inside the assistant message's tool_payload
-  // entry that matches this tool call's id.)
-  const compactedById = new Map<string, unknown>();
-  for (const m of msgRows) {
-    if (m.role !== "assistant" || !Array.isArray(m.toolPayload)) continue;
-    for (const tc of m.toolPayload as Array<Record<string, unknown>>) {
-      if (typeof tc.id === "string") compactedById.set(tc.id, tc.payload ?? tc);
-    }
-  }
-
+  // Sum raw response tokens across all tool_calls (one row per Orthogonal call).
+  let totalRaw = 0;
   const perTool: Array<{
-    id: string;
     provider: string;
     path: string;
     cached: boolean;
     priceCents: number;
     rawTokens: number;
-    compactedTokens: number;
-    reductionPercent: number;
   }> = [];
-
-  let totalRaw = 0;
-  let totalCompacted = 0;
-
   for (const tc of tcRows) {
     const rawT = jsonTokens(tc.response);
-    const compacted = compactedById.get(tc.id);
-    const compT = compacted != null ? jsonTokens(compacted) : 0;
     totalRaw += rawT;
-    totalCompacted += compT;
     perTool.push({
-      id: tc.id,
       provider: tc.provider,
       path: tc.path,
       cached: !!tc.cachedFromId,
       priceCents: tc.priceCents,
       rawTokens: rawT,
-      compactedTokens: compT,
-      reductionPercent: rawT > 0 ? Math.round(((rawT - compT) / rawT) * 100) : 0,
     });
+  }
+
+  // Sum compacted-payload tokens across all assistant messages' tool_payload
+  // arrays. This is exactly what the LLM saw in subsequent turns. The id
+  // schemas don't line up 1:1 with tool_calls.id (openai tool_call_id vs
+  // orthogonal uuid), so we aggregate instead of trying to per-call match.
+  let totalCompacted = 0;
+  for (const m of msgRows) {
+    if (m.role !== "assistant" || !Array.isArray(m.toolPayload)) continue;
+    for (const entry of m.toolPayload as Array<Record<string, unknown>>) {
+      totalCompacted += jsonTokens(entry.payload ?? entry);
+    }
   }
 
   // History tokens (user + assistant messages, no tool payloads)
