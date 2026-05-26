@@ -93,6 +93,42 @@ function CostMeter({ cents }: { cents: number }) {
   );
 }
 
+function SavedMeter({
+  reductionPct,
+  savedTokens,
+  savedUsd,
+  wouldHaveCrashed,
+}: {
+  reductionPct: number;
+  savedTokens: number;
+  savedUsd: number;
+  wouldHaveCrashed: boolean;
+}) {
+  return (
+    <div
+      className="hidden md:flex flex-col items-end gap-0.5 text-[10px] text-ink-muted"
+      title={
+        wouldHaveCrashed
+          ? `A naive chatbot would have CRASHED on this conversation (exceeded model_max). We sent ${savedTokens.toLocaleString()} fewer tokens (saved $${savedUsd.toFixed(6)}).`
+          : `${savedTokens.toLocaleString()} fewer tokens sent vs a naive chatbot. Saved $${savedUsd.toFixed(6)} on this conversation's input. Numbers from /api/context-stats — pulled from real tool_calls.response rows.`
+      }
+    >
+      <span className="font-mono uppercase tracking-[0.14em]">saved vs naive</span>
+      <span className="flex items-baseline gap-1">
+        <span
+          className={`font-mono tabular-nums ${wouldHaveCrashed ? "text-accent-strong" : "text-accent"}`}
+        >
+          {Math.round(reductionPct)}%
+        </span>
+        <span className="font-mono text-ink-muted">·</span>
+        <span className="font-mono tabular-nums text-ink-dim">
+          ${savedUsd.toFixed(4)}
+        </span>
+      </span>
+    </div>
+  );
+}
+
 function CompactionsMeter({ count }: { count: number }) {
   const fired = count > 0;
   return (
@@ -159,6 +195,14 @@ export function ChatArea({
   updateActiveMessages,
 }: ChatAreaProps) {
   const [isGenerating, setIsGenerating] = useState(false);
+  const [verified, setVerified] = useState<{
+    naive_input_tokens: number;
+    compacted_input_tokens: number;
+    saved_tokens: number;
+    reduction_percent: number;
+    saved_input_cost_usd: number;
+    would_have_crashed_naive: boolean;
+  } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -174,6 +218,38 @@ export function ChatArea({
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [conversation?.messages.length]);
+
+  // Fetch the truthful naive-vs-compacted numbers from the DB whenever the
+  // active conversation changes or a turn just finished generating. The
+  // in-stream context_update events compute naive POST-L1 so they always
+  // look identical to actual; /api/context-stats reads tool_calls.response
+  // (the raw Orthogonal payload) so the divergence is real.
+  useEffect(() => {
+    if (!conversation?.id || isGenerating) return;
+    const cid = conversation.id;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/context-stats?conversationId=${encodeURIComponent(cid)}`,
+          { credentials: "include" },
+        );
+        if (!res.ok) {
+          if (!cancelled) setVerified(null);
+          return;
+        }
+        const json = (await res.json()) as { ok?: boolean; totals?: typeof verified };
+        if (cancelled) return;
+        if (json.ok && json.totals) setVerified(json.totals);
+        else setVerified(null);
+      } catch {
+        if (!cancelled) setVerified(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [conversation?.id, isGenerating]);
 
   const stopAll = useCallback(() => {
     abortRef.current?.abort();
@@ -389,7 +465,22 @@ export function ChatArea({
 
   const messages = conversation?.messages ?? [];
   const isEmpty = messages.length === 0;
-  const stats = useMemo(() => deriveStats(conversation), [conversation]);
+  const streamStats = useMemo(() => deriveStats(conversation), [conversation]);
+  // Merge DB-verified totals into the meter values. The streamed naive_tokens
+  // is computed POST-L1 so it never diverges; verified.naive_input_tokens is
+  // computed from raw Orthogonal responses in the DB so it reflects what a
+  // naive chatbot would have actually sent. Fall back to stream values if the
+  // verify endpoint hasn't responded yet (e.g. on first turn).
+  const stats = useMemo(() => {
+    if (verified) {
+      return {
+        ...streamStats,
+        actualTokens: verified.compacted_input_tokens || streamStats.actualTokens,
+        naiveTokens: verified.naive_input_tokens || streamStats.naiveTokens,
+      };
+    }
+    return streamStats;
+  }, [streamStats, verified]);
 
   return (
     <main className="flex h-screen flex-1 flex-col">
@@ -409,6 +500,14 @@ export function ChatArea({
 
         <div className="ml-auto flex items-center gap-5">
           <DualContextMeter actual={stats.actualTokens} naive={stats.naiveTokens} modelMax={stats.modelMax} />
+          {verified && verified.reduction_percent > 0 && (
+            <SavedMeter
+              reductionPct={verified.reduction_percent}
+              savedTokens={verified.saved_tokens}
+              savedUsd={verified.saved_input_cost_usd}
+              wouldHaveCrashed={verified.would_have_crashed_naive}
+            />
+          )}
           <CompactionsMeter count={stats.compactionCount} />
           <CostMeter cents={stats.totalCostCents} />
         </div>
