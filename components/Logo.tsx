@@ -11,8 +11,8 @@ export function Logo({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
   return (
     <div className="inline-flex items-center gap-2 select-none">
       <Mark size={cfg.mark} className="text-accent" />
-      <span className={`font-sans font-medium tracking-tight ${cfg.text} text-ink leading-none`}>
-        Orthogonal
+      <span className={`font-sans font-medium tracking-tight ${cfg.text} text-ink leading-none whitespace-nowrap`}>
+        Orthogonal Chat
       </span>
     </div>
   );

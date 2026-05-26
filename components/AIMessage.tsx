@@ -1,7 +1,8 @@
 "use client";
 
-import { motion } from "framer-motion";
-import { Copy, ThumbsUp, ThumbsDown, RefreshCw } from "lucide-react";
+import { useEffect, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Copy, Check, ThumbsUp, ThumbsDown } from "lucide-react";
 import { ThinkingIndicator, type ThinkingState } from "./ThinkingIndicator";
 import { ReasoningPanel } from "./ReasoningPanel";
 import { StreamingText } from "./StreamingText";
@@ -141,11 +142,10 @@ export function AIMessage({ data, onRetry }: AIMessageProps) {
             transition={{ duration: 0.4, delay: 0.3 }}
             className="mt-5 flex items-center gap-1 text-ink-muted"
           >
-            <ActionButton icon={<Copy size={13} strokeWidth={1.8} />} label="Copy" />
-            <ActionButton icon={<RefreshCw size={13} strokeWidth={1.8} />} label="Regenerate" onClick={onRetry} />
+            <CopyButton text={data.response?.text ?? ""} />
             <div className="mx-1 h-4 w-px bg-border" />
-            <ActionButton icon={<ThumbsUp size={13} strokeWidth={1.8} />} label="Good" />
-            <ActionButton icon={<ThumbsDown size={13} strokeWidth={1.8} />} label="Bad" />
+            <FeedbackButton messageId={data.id} kind="good" />
+            <FeedbackButton messageId={data.id} kind="bad" />
           </motion.div>
         )}
       </div>
@@ -153,11 +153,98 @@ export function AIMessage({ data, onRetry }: AIMessageProps) {
   );
 }
 
-function ActionButton({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick?: () => void }) {
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const onClick = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // clipboard might be blocked; silently fail
+    }
+  };
   return (
-    <button onClick={onClick} className="group flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors hover:bg-elevated hover:text-ink">
-      {icon}
-      <span className="hidden opacity-0 transition-opacity group-hover:opacity-100 md:inline">{label}</span>
+    <button
+      onClick={onClick}
+      className="group flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors hover:bg-elevated hover:text-ink"
+      aria-label="Copy response"
+    >
+      <AnimatePresence mode="wait" initial={false}>
+        {copied ? (
+          <motion.span
+            key="check"
+            initial={{ scale: 0.6, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.6, opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="flex items-center text-accent"
+          >
+            <Check size={13} strokeWidth={2.2} />
+          </motion.span>
+        ) : (
+          <motion.span
+            key="copy"
+            initial={{ scale: 0.6, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.6, opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="flex items-center"
+          >
+            <Copy size={13} strokeWidth={1.8} />
+          </motion.span>
+        )}
+      </AnimatePresence>
+      <span className="hidden opacity-0 transition-opacity group-hover:opacity-100 md:inline">
+        {copied ? "Copied" : "Copy"}
+      </span>
+    </button>
+  );
+}
+
+function FeedbackButton({ messageId, kind }: { messageId: string; kind: "good" | "bad" }) {
+  const [active, setActive] = useState(false);
+  const [showThanks, setShowThanks] = useState(false);
+  const storeKey = `orth.feedback.${messageId}`;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setActive(window.localStorage.getItem(storeKey) === kind);
+  }, [storeKey, kind]);
+
+  const onClick = () => {
+    const next = !active;
+    setActive(next);
+    if (typeof window !== "undefined") {
+      if (next) {
+        window.localStorage.setItem(storeKey, kind);
+      } else if (window.localStorage.getItem(storeKey) === kind) {
+        window.localStorage.removeItem(storeKey);
+      }
+    }
+    if (next) {
+      setShowThanks(true);
+      setTimeout(() => setShowThanks(false), 1800);
+    }
+  };
+
+  const Icon = kind === "good" ? ThumbsUp : ThumbsDown;
+  const label = kind === "good" ? "Good" : "Bad";
+
+  return (
+    <button
+      onClick={onClick}
+      className={[
+        "group flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors hover:bg-elevated hover:text-ink",
+        active ? "text-accent hover:text-accent" : "",
+      ].join(" ")}
+      aria-label={`Mark response as ${label}`}
+      aria-pressed={active}
+    >
+      <Icon size={13} strokeWidth={1.8} fill={active ? "currentColor" : "none"} />
+      <span className="hidden opacity-0 transition-opacity group-hover:opacity-100 md:inline">
+        {showThanks ? "Thanks" : label}
+      </span>
     </button>
   );
 }
