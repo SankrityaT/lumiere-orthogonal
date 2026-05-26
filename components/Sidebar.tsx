@@ -1,11 +1,10 @@
 "use client";
 
-import { Plus, Search, Settings2, Trash2 } from "lucide-react";
+import { Plus, Search, Trash2 } from "lucide-react";
 import { Logo } from "./Logo";
 import { ThemeToggle } from "./ThemeToggle";
 import { motion, AnimatePresence } from "framer-motion";
 import { groupByRecency, type Conversation } from "@/lib/conversations";
-import { Mark } from "./Mark";
 
 interface SidebarProps {
   conversations: Conversation[];
@@ -13,7 +12,6 @@ interface SidebarProps {
   onSelect: (id: string) => void;
   onNew: () => void;
   onDelete: (id: string) => void;
-  onOpenSettings: () => void;
 }
 
 export function Sidebar({
@@ -22,7 +20,6 @@ export function Sidebar({
   onSelect,
   onNew,
   onDelete,
-  onOpenSettings,
 }: SidebarProps) {
   const groups = groupByRecency(conversations);
   const isEmpty = conversations.length === 0;
@@ -96,23 +93,18 @@ export function Sidebar({
                         {c.id === activeId && (
                           <span className="absolute left-0 top-1/2 h-3.5 w-[2px] -translate-y-1/2 rounded-full bg-accent" />
                         )}
-                        {c.isDemo && (
-                          <Mark size={10} dense className="shrink-0 text-accent/70" />
-                        )}
                         <span className="block truncate">{c.title}</span>
                       </button>
-                      {!c.isDemo && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onDelete(c.id);
-                          }}
-                          className="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-ink-muted opacity-0 transition-all hover:bg-bg hover:text-ink group-hover/item:opacity-100"
-                          aria-label="Delete conversation"
-                        >
-                          <Trash2 size={11} strokeWidth={1.8} />
-                        </button>
-                      )}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDelete(c.id);
+                        }}
+                        className="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-ink-muted opacity-0 transition-all hover:bg-bg hover:text-ink group-hover/item:opacity-100"
+                        aria-label="Delete conversation"
+                      >
+                        <Trash2 size={11} strokeWidth={1.8} />
+                      </button>
                     </motion.li>
                   ))}
                 </ul>
@@ -124,22 +116,11 @@ export function Sidebar({
 
       {/* Footer */}
       <div className="border-t border-border/70 p-3">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-accent/40 to-accent-strong/60 ring-1 ring-border">
-            <span className="font-display text-[14px] italic text-bg">S</span>
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-[12.5px] font-medium text-ink">Sanki</div>
-            <div className="truncate text-[11px] text-ink-muted">Pro plan</div>
+        <div className="flex items-center justify-between gap-2.5">
+          <div className="text-[11px] text-ink-muted">
+            <span className="font-mono">orth-chat</span> · take-home
           </div>
           <ThemeToggle />
-          <button
-            onClick={onOpenSettings}
-            className="rounded-md p-1.5 text-ink-muted transition-colors hover:bg-elevated hover:text-ink"
-            aria-label="Settings"
-          >
-            <Settings2 size={14} strokeWidth={1.8} />
-          </button>
         </div>
       </div>
     </aside>

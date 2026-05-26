@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { ChatArea } from "@/components/ChatArea";
-import { SettingsDrawer } from "@/components/SettingsDrawer";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   loadConversations,
@@ -14,32 +13,22 @@ import {
   type Conversation,
   type Msg,
 } from "@/lib/conversations";
-import { buildDemoConversation, isDemoConversation } from "@/lib/preloaded-demo";
 
 export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
-  // Hydrate from localStorage on first mount
   useEffect(() => {
     const stored = loadConversations();
-    const demo = buildDemoConversation();
-    // Always ensure exactly one demo entry exists, and refresh its content so
-    // future updates to demo-script propagate automatically.
-    const withoutDemo = stored.filter((c) => !c.isDemo);
-    const list = [...withoutDemo, demo];
-    setConversations(list);
-
+    setConversations(stored);
     const savedActive = loadActiveId();
-    const activeStillExists = savedActive && list.some((c) => c.id === savedActive);
-    setActiveId(activeStillExists ? savedActive : null);
+    const stillExists = savedActive && stored.some((c) => c.id === savedActive);
+    setActiveId(stillExists ? savedActive : null);
     setHydrated(true);
   }, []);
 
-  // Persist (skip first render before hydration)
   useEffect(() => {
     if (!hydrated) return;
     saveConversations(conversations);
@@ -84,27 +73,22 @@ export default function Home() {
     setActiveId(id);
   }, []);
 
-  const onDeleteConversation = useCallback(
-    (id: string) => {
-      if (isDemoConversation(id)) return; // demo is not deletable
-      setConversations((cur) => cur.filter((c) => c.id !== id));
-      setActiveId((cur) => (cur === id ? null : cur));
-    },
-    [],
-  );
+  const onDeleteConversation = useCallback((id: string) => {
+    setConversations((cur) => cur.filter((c) => c.id !== id));
+    setActiveId((cur) => (cur === id ? null : cur));
+  }, []);
 
-  // Returns a writable conversation id, creating a new one if the current
-  // active conversation is missing or read-only (the demo).
+  // Returns a writable conversation id, creating a new one if there is no active conversation.
   const ensureActiveConversation = useCallback((): string => {
     const current = activeId ? conversations.find((c) => c.id === activeId) : null;
-    if (current && !current.isDemo) return current.id;
+    if (current) return current.id;
     const c = createNew();
     setConversations((cur) => [...cur, c]);
     setActiveId(c.id);
     return c.id;
   }, [activeId, conversations]);
 
-  // Apply to a specific conversation id (used when ensureActive returns a new id
+  // Apply messages to a specific conversation id (used when ensureActive returns a new id
   // and we need to write into it before React re-renders).
   const writeToConversation = useCallback(
     (id: string, updater: (messages: Msg[]) => Msg[], titleHint?: string) => {
@@ -143,7 +127,6 @@ export default function Home() {
               onSelect={onSelectConversation}
               onNew={onNewConversation}
               onDelete={onDeleteConversation}
-              onOpenSettings={() => setSettingsOpen(true)}
             />
           </motion.div>
         )}
@@ -152,13 +135,11 @@ export default function Home() {
         conversation={activeConversation}
         onToggleSidebar={() => setSidebarOpen((v) => !v)}
         sidebarOpen={sidebarOpen}
-        onOpenSettings={() => setSettingsOpen(true)}
         onNewConversation={onNewConversation}
         ensureActive={ensureActiveConversation}
         writeToConversation={writeToConversation}
         updateActiveMessages={updateActiveMessages}
       />
-      <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
 }

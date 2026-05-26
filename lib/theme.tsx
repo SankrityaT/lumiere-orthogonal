@@ -16,7 +16,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>("dark");
 
   useEffect(() => {
-    const stored = typeof window !== "undefined" ? window.localStorage.getItem("lumiere-theme") : null;
+    const stored = typeof window !== "undefined" ? window.localStorage.getItem("orth-theme") : null;
     if (stored === "light" || stored === "dark") {
       setThemeState(stored);
     }
@@ -26,7 +26,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const root = document.documentElement;
     if (theme === "dark") root.classList.add("dark");
     else root.classList.remove("dark");
-    window.localStorage.setItem("lumiere-theme", theme);
+    window.localStorage.setItem("orth-theme", theme);
   }, [theme]);
 
   const setTheme = (t: Theme) => setThemeState(t);

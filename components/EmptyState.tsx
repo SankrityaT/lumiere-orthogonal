@@ -1,33 +1,33 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Code2, Compass, Feather, FlaskConical } from "lucide-react";
+import { Users, TrendingUp, UserSearch, Globe } from "lucide-react";
 import { Mark } from "./Mark";
 
 const SUGGESTIONS = [
   {
-    icon: Compass,
-    title: "Compare frontier AI models",
-    body: "Claude 4.7 vs GPT-5.5 vs Gemini 3.1 Pro on benchmarks and fit.",
-    prompt: "Compare the latest frontier models: Claude 4.7, GPT-5.5, and Gemini 3.1 Pro across benchmarks, capabilities, and best use cases.",
+    icon: Users,
+    title: "Find people at Stripe in engineering",
+    body: "Search Apollo for roles, seniority, and locations.",
+    prompt: "Find people at Stripe in engineering roles, ideally senior+.",
   },
   {
-    icon: Code2,
-    title: "Review my React component",
-    body: "Critique architecture and suggest improvements.",
-    prompt: "Review my React component architecture for performance and maintainability.",
+    icon: TrendingUp,
+    title: "AI funding rounds this week",
+    body: "PredictLeads financing events, recent first.",
+    prompt: "What AI startup funding rounds happened in the last 7 days?",
   },
   {
-    icon: Feather,
-    title: "Draft a sharp opener",
-    body: "Editorial cold email under sixty words.",
-    prompt: "Draft me a sharp editorial-style cold email under 60 words.",
+    icon: UserSearch,
+    title: "Enrich a contact",
+    body: "ContactOut: email, phone, LinkedIn, role.",
+    prompt: "Enrich the contact satya@microsoft.com — give me title, LinkedIn, recent role history.",
   },
   {
-    icon: FlaskConical,
-    title: "Explain a paper",
-    body: "Break down a recent ML paper for a curious engineer.",
-    prompt: "Explain a recent ML paper at a graduate-engineer level. Clear and concise.",
+    icon: Globe,
+    title: "Search the web",
+    body: "Live web results, cited.",
+    prompt: "Search the web for OpenAI's latest model announcement and summarize it.",
   },
 ];
 
@@ -38,7 +38,6 @@ interface EmptyStateProps {
 export function EmptyState({ onSuggest }: EmptyStateProps) {
   return (
     <div className="mx-auto flex max-w-3xl flex-1 flex-col justify-center px-6 py-12">
-      {/* Greeting */}
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
@@ -46,25 +45,24 @@ export function EmptyState({ onSuggest }: EmptyStateProps) {
         className="mb-10"
       >
         <div className="flex items-center gap-4">
-          <Mark size={48} className="text-accent shrink-0" />
+          <Mark size={44} className="text-accent shrink-0" />
           <h1
             className="serif-display text-ink"
             style={{
-              fontSize: "clamp(2.25rem, 5vw, 3.5rem)",
+              fontSize: "clamp(2rem, 4.5vw, 3.25rem)",
               lineHeight: 1.05,
             }}
           >
-            <span>What shall we </span>
-            <span className="serif-italic text-accent">illuminate</span>
+            <span>What can we </span>
+            <span className="serif-italic text-accent">find</span>
             <span> today?</span>
           </h1>
         </div>
-        <p className="mt-4 max-w-[460px] text-[14px] leading-relaxed text-ink-dim">
-          An editorial assistant for thinking out loud, equipped to read the web, hold a thought, and write back with care.
+        <p className="mt-4 max-w-[480px] text-[14px] leading-relaxed text-ink-dim">
+          A chat with access to Orthogonal&apos;s API catalog. Ask about people, companies, funding signals, or the web — the agent picks the right tool and shows real results inline.
         </p>
       </motion.div>
 
-      {/* Suggestion cards */}
       <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
         {SUGGESTIONS.map((s, i) => (
           <motion.button

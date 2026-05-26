@@ -24,11 +24,10 @@ export interface Conversation {
   messages: Msg[];
   createdAt: number;
   updatedAt: number;
-  isDemo?: boolean;
 }
 
-const STORE_KEY = "lumiere.conversations";
-const ACTIVE_KEY = "lumiere.active_id";
+const STORE_KEY = "orth.conversations";
+const ACTIVE_KEY = "orth.active_id";
 
 // ----------------- store I/O -----------------
 

@@ -2,7 +2,6 @@
 
 import type { Source } from "@/components/SourceChip";
 import type { Attachment } from "@/components/ChatInput";
-import { getKeys } from "./keys";
 
 export interface ApiAttachment {
   name: string;
@@ -41,7 +40,7 @@ async function fileToBase64(file: File): Promise<string> {
 export async function attachmentsToApi(atts: Attachment[]): Promise<ApiAttachment[]> {
   const out: ApiAttachment[] = [];
   for (const a of atts) {
-    if (!a.preview) continue; // skip non-image attachments for now (Gemini handles inline images well)
+    if (!a.preview) continue;
     try {
       const res = await fetch(a.preview);
       const blob = await res.blob();
@@ -57,25 +56,12 @@ export async function attachmentsToApi(atts: Attachment[]): Promise<ApiAttachmen
 
 export async function* streamChat(
   messages: ChatMessage[],
-  options: { enableWeb?: boolean; signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal } = {},
 ): AsyncGenerator<ChatEvent> {
-  const keys = getKeys();
-  if (!keys.llm) {
-    yield { type: "error", message: "Missing LLM API key. Open Settings to add one." };
-    return;
-  }
-
   const res = await fetch("/api/chat", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-llm-key": keys.llm,
-      ...(keys.search ? { "x-search-key": keys.search } : {}),
-    },
-    body: JSON.stringify({
-      messages,
-      enableWeb: options.enableWeb !== false && !!keys.search,
-    }),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ messages }),
     signal: options.signal,
   });
 

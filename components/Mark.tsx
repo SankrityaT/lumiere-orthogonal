@@ -1,11 +1,9 @@
 "use client";
 
-import { useId } from "react";
-
 /**
- * Lumière mark — a bright disc with two thin orbital ellipses crossing it.
- * Reads as a celestial/lens motif. Uses currentColor so it inherits the
- * accent. The `dense` variant drops the orbits for tiny sizes (avatar, favicon).
+ * Mark — two perpendicular bars meeting at center inside a soft ring.
+ * Reads as a literal "orthogonal" glyph. Uses currentColor so it inherits
+ * the accent. The `dense` variant drops the ring for tiny sizes.
  */
 export function Mark({
   size = 18,
@@ -16,9 +14,6 @@ export function Mark({
   className?: string;
   dense?: boolean;
 }) {
-  const id = useId();
-  const orbitId = `m-${id}`;
-
   return (
     <svg
       viewBox="0 0 32 32"
@@ -30,24 +25,31 @@ export function Mark({
       aria-hidden="true"
     >
       {!dense && (
-        <>
-          {/* Orbital ellipses, masked so they appear behind the disc cleanly */}
-          <defs>
-            <mask id={orbitId}>
-              <rect width="32" height="32" fill="white" />
-              <circle cx="16" cy="16" r="4.4" fill="black" />
-            </mask>
-          </defs>
-          <g mask={`url(#${orbitId})`} stroke="currentColor" strokeWidth="1.1" fill="none" opacity="0.85">
-            <ellipse cx="16" cy="16" rx="14" ry="4.6" transform="rotate(-28 16 16)" />
-            <ellipse cx="16" cy="16" rx="14" ry="4.6" transform="rotate(28 16 16)" />
-          </g>
-        </>
+        <circle
+          cx="16"
+          cy="16"
+          r="13.5"
+          stroke="currentColor"
+          strokeWidth="1.1"
+          opacity="0.4"
+        />
       )}
-      {/* Central disc */}
-      <circle cx="16" cy="16" r={dense ? 5.5 : 3.6} fill="currentColor" />
-      {/* Tiny highlight inside disc for a hint of dimension */}
-      <circle cx={dense ? 14 : 14.8} cy={dense ? 14 : 14.8} r={dense ? 1.4 : 1} fill="currentColor" opacity="0.45" style={{ mixBlendMode: "screen" }} />
+      <rect
+        x={dense ? 4 : 7}
+        y="15"
+        width={dense ? 24 : 18}
+        height="2"
+        rx="1"
+        fill="currentColor"
+      />
+      <rect
+        x="15"
+        y={dense ? 4 : 7}
+        width="2"
+        height={dense ? 24 : 18}
+        rx="1"
+        fill="currentColor"
+      />
     </svg>
   );
 }

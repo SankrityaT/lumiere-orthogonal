@@ -1,11 +1,5 @@
 <svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-  <mask id="m">
-    <rect width="32" height="32" fill="white"/>
-    <circle cx="16" cy="16" r="4.4" fill="black"/>
-  </mask>
-  <g mask="url(#m)" stroke="#e8b5a0" stroke-width="1.4" fill="none" opacity="0.9">
-    <ellipse cx="16" cy="16" rx="14" ry="4.6" transform="rotate(-28 16 16)"/>
-    <ellipse cx="16" cy="16" rx="14" ry="4.6" transform="rotate(28 16 16)"/>
-  </g>
-  <circle cx="16" cy="16" r="3.6" fill="#e8b5a0"/>
+  <circle cx="16" cy="16" r="13.5" stroke="#e8b5a0" stroke-width="1.4" fill="none" opacity="0.5"/>
+  <rect x="7" y="15" width="18" height="2" rx="1" fill="#e8b5a0"/>
+  <rect x="15" y="7" width="2" height="18" rx="1" fill="#e8b5a0"/>
 </svg>
