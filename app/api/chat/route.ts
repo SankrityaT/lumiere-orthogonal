@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { randomUUID } from "node:crypto";
+import { waitUntil } from "@vercel/functions";
 import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/chat/completions";
 import { openai, MODEL, MODEL_MAX_TOKENS } from "@/lib/openai";
 import { TOOLS, TOOL_DEFS, guardedCall, type ExecCtx } from "@/lib/tools";
@@ -386,16 +387,21 @@ export async function POST(req: NextRequest) {
         controller.close();
       }
 
-      // Fire-and-forget persistence (don't block stream close)
-      persistTurn({
-        userId: user.uid,
-        conversationId,
-        assistantMessageId,
-        userContent: inputMsgs[inputMsgs.length - 1]?.content ?? "",
-        assistantContent: finalAssistantContent,
-        toolPayload: finalToolPayload,
-        toolCalls: persistedCalls,
-      }).catch((e) => console.error("[persist] failed:", e));
+      // Persist after stream close. Wrapped in waitUntil so Vercel keeps the
+      // function alive until the writes finish; otherwise the serverless
+      // runtime kills us right after the stream closes and the writes never
+      // land in Neon (silent data loss).
+      waitUntil(
+        persistTurn({
+          userId: user.uid,
+          conversationId,
+          assistantMessageId,
+          userContent: inputMsgs[inputMsgs.length - 1]?.content ?? "",
+          assistantContent: finalAssistantContent,
+          toolPayload: finalToolPayload,
+          toolCalls: persistedCalls,
+        }).catch((e) => console.error("[persist] failed:", e)),
+      );
     },
   });
 
