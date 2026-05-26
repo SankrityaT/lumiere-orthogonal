@@ -20,7 +20,7 @@ export default function Landing() {
       >
         <div className="flex items-center gap-2.5">
           <Mark size={16} className="text-accent" />
-          <span className="serif-italic text-[16px] leading-none">orth chat</span>
+          <span className="serif-italic text-[16px] leading-none">Orthogonal Chat</span>
         </div>
         <div className="flex items-center gap-3">
           <a

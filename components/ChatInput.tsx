@@ -4,17 +4,12 @@ import { useRef, useState, useEffect, useCallback, type DragEvent, type ChangeEv
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Paperclip,
-  Globe,
-  Sparkles,
   Mic,
   ArrowUp,
   X,
-  ChevronDown,
   Image as ImageIcon,
   FileText,
   Square,
-  Lightbulb,
-  Telescope,
 } from "lucide-react";
 
 export interface Attachment {
@@ -25,20 +20,12 @@ export interface Attachment {
   preview?: string;
 }
 
-type Tool = "search" | "research" | "think";
-
 interface ChatInputProps {
-  onSubmit: (text: string, attachments: Attachment[], tools: Tool[]) => void;
+  onSubmit: (text: string, attachments: Attachment[]) => void;
   isGenerating?: boolean;
   onStop?: () => void;
   disabled?: boolean;
 }
-
-const MODELS = [
-  { id: "lumiere-opus", label: "Lumière Opus", sub: "Most capable" },
-  { id: "lumiere-sonnet", label: "Lumière Sonnet", sub: "Balanced" },
-  { id: "lumiere-haiku", label: "Lumière Haiku", sub: "Fast" },
-];
 
 function formatSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -52,9 +39,7 @@ export function ChatInput({ onSubmit, isGenerating, onStop, disabled }: ChatInpu
   const containerRef = useRef<HTMLDivElement>(null);
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [tools, setTools] = useState<Set<Tool>>(new Set(["search"]));
-  const [model, setModel] = useState(MODELS[0]);
-  const [modelOpen, setModelOpen] = useState(false);
+  const modelName = process.env.NEXT_PUBLIC_OPENAI_MODEL ?? "gpt-5-mini";
   const [isDragging, setIsDragging] = useState(false);
   const [focused, setFocused] = useState(false);
   const dragCounter = useRef(0);
@@ -136,20 +121,11 @@ export function ChatInput({ onSubmit, isGenerating, onStop, disabled }: ChatInpu
     });
   };
 
-  const toggleTool = (t: Tool) => {
-    setTools((cur) => {
-      const next = new Set(cur);
-      if (next.has(t)) next.delete(t);
-      else next.add(t);
-      return next;
-    });
-  };
-
   const submit = () => {
     if (disabled || isGenerating) return;
     const trimmed = text.trim();
     if (!trimmed && attachments.length === 0) return;
-    onSubmit(trimmed, attachments, Array.from(tools));
+    onSubmit(trimmed, attachments);
     setText("");
     setAttachments([]);
   };
@@ -311,70 +287,11 @@ export function ChatInput({ onSubmit, isGenerating, onStop, disabled }: ChatInpu
                 className="hidden"
               />
 
-              {/* Tool chips */}
-              <ToolChip
-                active={tools.has("search")}
-                onClick={() => toggleTool("search")}
-                icon={<Globe size={13} strokeWidth={1.8} />}
-                label="Web"
-              />
-              <ToolChip
-                active={tools.has("research")}
-                onClick={() => toggleTool("research")}
-                icon={<Telescope size={13} strokeWidth={1.8} />}
-                label="Research"
-              />
-              <ToolChip
-                active={tools.has("think")}
-                onClick={() => toggleTool("think")}
-                icon={<Lightbulb size={13} strokeWidth={1.8} />}
-                label="Think"
-              />
-
-              <div className="mx-1.5 h-4 w-px bg-border" />
-
-              {/* Model picker */}
-              <div className="relative">
-                <button
-                  onClick={() => setModelOpen((v) => !v)}
-                  className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12.5px] text-ink-dim transition-colors hover:bg-elevated hover:text-ink"
-                >
-                  <Sparkles size={12} strokeWidth={1.8} className="text-accent" />
-                  <span className="font-medium">{model.label.split(" ")[1]}</span>
-                  <ChevronDown size={11} className={`transition-transform ${modelOpen ? "rotate-180" : ""}`} />
-                </button>
-                <AnimatePresence>
-                  {modelOpen && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 6, scale: 0.98 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 6, scale: 0.98 }}
-                      transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-                      className="absolute bottom-full left-0 mb-2 w-60 origin-bottom-left rounded-xl border border-border bg-elevated p-1.5 shadow-2xl"
-                    >
-                      {MODELS.map((m) => (
-                        <button
-                          key={m.id}
-                          onClick={() => {
-                            setModel(m);
-                            setModelOpen(false);
-                          }}
-                          className={[
-                            "flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left transition-colors",
-                            m.id === model.id ? "bg-bg" : "hover:bg-bg/60",
-                          ].join(" ")}
-                        >
-                          <div className="mt-0.5 h-1.5 w-1.5 rounded-full bg-accent" style={{ opacity: m.id === model.id ? 1 : 0.25 }} />
-                          <div>
-                            <div className="text-[13px] font-medium text-ink">{m.label}</div>
-                            <div className="text-[11px] text-ink-muted">{m.sub}</div>
-                          </div>
-                        </button>
-                      ))}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
+              {/* Model badge (read-only, env-pinned) */}
+              <span className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11.5px] text-ink-muted">
+                <span className="h-1.5 w-1.5 rounded-full bg-accent/80" />
+                <span className="font-mono">{modelName}</span>
+              </span>
 
               {/* Right cluster */}
               <div className="ml-auto flex items-center gap-1">

@@ -1,9 +1,11 @@
 "use client";
 
 /**
- * Mark — two perpendicular bars meeting at center inside a soft ring.
- * Reads as a literal "orthogonal" glyph. Uses currentColor so it inherits
- * the accent. The `dense` variant drops the ring for tiny sizes.
+ * Mark — isometric cube viewed from the corner. Top face filled, side faces
+ * outlined at reduced opacity to create depth. Geometric, distinctive at
+ * every size, ties visually to "structure / context / dimension." Uses
+ * currentColor so it inherits the accent. The `dense` variant collapses
+ * to just the top-face rhombus so it stays legible at favicon size.
  */
 export function Mark({
   size = 18,
@@ -24,32 +26,30 @@ export function Mark({
       className={className}
       aria-hidden="true"
     >
-      {!dense && (
-        <circle
-          cx="16"
-          cy="16"
-          r="13.5"
-          stroke="currentColor"
-          strokeWidth="1.1"
-          opacity="0.4"
-        />
+      {dense ? (
+        <path d="M 16 4 L 28 11 L 16 18 L 4 11 Z" fill="currentColor" />
+      ) : (
+        <>
+          {/* Top face: filled */}
+          <path d="M 16 3 L 28 10 L 16 17 L 4 10 Z" fill="currentColor" />
+          {/* Right face: outlined */}
+          <path
+            d="M 28 10 L 28 22 L 16 29 L 16 17 Z"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinejoin="round"
+            opacity="0.55"
+          />
+          {/* Left face: outlined */}
+          <path
+            d="M 4 10 L 4 22 L 16 29 L 16 17 Z"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinejoin="round"
+            opacity="0.55"
+          />
+        </>
       )}
-      <rect
-        x={dense ? 4 : 7}
-        y="15"
-        width={dense ? 24 : 18}
-        height="2"
-        rx="1"
-        fill="currentColor"
-      />
-      <rect
-        x="15"
-        y={dense ? 4 : 7}
-        width="2"
-        height={dense ? 24 : 18}
-        rx="1"
-        fill="currentColor"
-      />
     </svg>
   );
 }
