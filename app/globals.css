@@ -1,0 +1,251 @@
+@import url("https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:ital,wght@0,400..600;1,400..600&display=swap");
+@import url("https://api.fontshare.com/v2/css?f[]=neue-montreal@400,500,600,700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display: "Instrument Serif", serif;
+  --font-italic: "Instrument Serif", serif;
+  --font-sans: "Neue Montreal", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  /* light pastel */
+  --bg: 246 240 232;
+  --surface: 251 245 238;
+  --elevated: 255 250 244;
+  --border: 224 213 200;
+  --border-strong: 190 175 158;
+  --text: 36 30 26;
+  --text-dim: 104 90 80;
+  --text-muted: 148 132 118;
+  --accent: 198 138 116;
+  --accent-strong: 178 116 94;
+
+  --shadow-elevated: 0 1px 2px rgba(60, 50, 40, 0.04), 0 8px 24px -8px rgba(60, 50, 40, 0.10);
+  --grain-opacity: 0.02;
+}
+
+.dark {
+  /* dark pastel */
+  --bg: 22 20 19;
+  --surface: 32 28 27;
+  --elevated: 44 39 37;
+  --border: 58 51 47;
+  --border-strong: 78 70 64;
+  --text: 240 232 224;
+  --text-dim: 168 156 146;
+  --text-muted: 108 98 90;
+  --accent: 232 181 160;
+  --accent-strong: 244 200 182;
+
+  --shadow-elevated: 0 1px 2px rgba(0, 0, 0, 0.35), 0 12px 32px -8px rgba(0, 0, 0, 0.4);
+  --grain-opacity: 0.04;
+}
+
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html, body {
+  background: rgb(var(--bg));
+  color: rgb(var(--text));
+  font-family: var(--font-sans);
+  overscroll-behavior: none;
+}
+
+body {
+  position: relative;
+}
+
+/* Atmospheric grain texture */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+  opacity: var(--grain-opacity);
+  background-image: url("data:image/svg+xml;utf8,<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.6 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  mix-blend-mode: overlay;
+}
+
+/* (dark vignette removed for restraint) */
+
+/* Refined scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--border));
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--border-strong));
+  background-clip: content-box;
+  border: 2px solid transparent;
+}
+
+/* Selection */
+::selection {
+  background: rgb(var(--accent) / 0.25);
+  color: rgb(var(--text));
+}
+
+/* Focus ring */
+:focus-visible {
+  outline: 1.5px solid rgb(var(--accent));
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Hide default focus inside our themed inputs */
+.no-default-focus:focus-visible { outline: none; }
+
+/* Editorial drop cap utility */
+.drop-cap::first-letter {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 3.2em;
+  line-height: 0.82;
+  float: left;
+  padding: 0.05em 0.1em 0 0;
+  color: rgb(var(--accent));
+  font-weight: 400;
+}
+
+/* Markdown styling inside AI responses */
+.prose-editorial { font-size: 16px; line-height: 1.7; color: rgb(var(--text)); }
+.prose-editorial h1, .prose-editorial h2, .prose-editorial h3 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.015em;
+  color: rgb(var(--text));
+  margin-top: 1.5em;
+  margin-bottom: 0.4em;
+  line-height: 1.15;
+}
+.prose-editorial h1 { font-size: 2rem; }
+.prose-editorial h2 { font-size: 1.55rem; }
+.prose-editorial h3 { font-size: 1.2rem; }
+.prose-editorial p { margin: 0.75em 0; }
+.prose-editorial ul, .prose-editorial ol { margin: 0.75em 0; padding-left: 1.4em; }
+.prose-editorial li { margin: 0.35em 0; }
+.prose-editorial strong { color: rgb(var(--text)); font-weight: 600; }
+.prose-editorial em { font-family: var(--font-italic); font-style: italic; font-size: 1.04em; color: rgb(var(--text-dim)); }
+.prose-editorial code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  background: rgb(var(--elevated));
+  border: 1px solid rgb(var(--border));
+  padding: 0.1em 0.4em;
+  border-radius: 4px;
+  color: rgb(var(--accent-strong));
+}
+.prose-editorial pre {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: rgb(var(--surface));
+  border: 1px solid rgb(var(--border));
+  padding: 1em 1.2em;
+  border-radius: 10px;
+  overflow-x: auto;
+  margin: 1em 0;
+  position: relative;
+}
+.prose-editorial pre code {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: rgb(var(--text));
+}
+.prose-editorial blockquote {
+  border-left: 2px solid rgb(var(--accent));
+  padding-left: 1em;
+  margin: 1em 0;
+  font-family: var(--font-italic);
+  font-style: italic;
+  color: rgb(var(--text-dim));
+  font-size: 1.08em;
+}
+.prose-editorial a {
+  color: rgb(var(--accent-strong));
+  text-decoration: underline;
+  text-decoration-color: rgb(var(--accent) / 0.4);
+  text-underline-offset: 3px;
+}
+
+/* Shimmer text */
+.shimmer-text {
+  background: linear-gradient(
+    90deg,
+    rgb(var(--text-muted)) 0%,
+    rgb(var(--text-muted)) 35%,
+    rgb(var(--text)) 50%,
+    rgb(var(--text-muted)) 65%,
+    rgb(var(--text-muted)) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 2.5s linear infinite;
+}
+
+/* Display serif */
+.serif-display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.018em;
+}
+.serif-italic {
+  font-family: var(--font-italic);
+  font-style: italic;
+  letter-spacing: -0.005em;
+}
+
+/* Custom autoresize for textareas to keep line height */
+textarea.auto-grow { line-height: 1.5; }
+
+/* Animated underline for chips */
+.chip-underline {
+  background-image: linear-gradient(rgb(var(--accent)), rgb(var(--accent)));
+  background-size: 0% 1px;
+  background-repeat: no-repeat;
+  background-position: 0 100%;
+  transition: background-size 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.chip-underline:hover { background-size: 100% 1px; }
+
+/* Reasoning panel vertical rule pulse */
+.reasoning-rule {
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgb(var(--accent) / 0.3) 20%,
+    rgb(var(--accent) / 0.5) 50%,
+    rgb(var(--accent) / 0.3) 80%,
+    transparent 100%
+  );
+}
+
+/* For citations to feel like the small caps editorial type */
+.citation-chip {
+  font-family: var(--font-mono);
+  font-feature-settings: "tnum";
+  font-size: 0.65em;
+  vertical-align: super;
+  line-height: 1;
+}
+
+/* Sodium-orange thinking glow */
+.thinking-glow {
+  background: radial-gradient(circle at center, rgb(var(--accent) / 0.4), transparent 70%);
+  filter: blur(8px);
+}
