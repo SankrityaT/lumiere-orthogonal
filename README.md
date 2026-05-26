@@ -1,6 +1,6 @@
 # Orthogonal Chat
 
-**Live demo:** _(deploy URL goes here)_
+**Live demo:** [lumiere-orthogonal.vercel.app](https://lumiere-orthogonal.vercel.app)
 **Repo:** https://github.com/SankrityaT/lumiere-orthogonal
 
 A chat app where the assistant calls Orthogonal's unified API catalog (55+ providers behind one key) and renders real results inline.
