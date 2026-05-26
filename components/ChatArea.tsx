@@ -6,7 +6,7 @@ import { EmptyState } from "./EmptyState";
 import { UserMessage } from "./UserMessage";
 import { AIMessage, type AIMessageData, type ToolCallEntry } from "./AIMessage";
 import { countTokens } from "./StreamingText";
-import { PanelLeftClose, PanelLeftOpen, Sparkles, Share2, MoreHorizontal } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, Sparkles } from "lucide-react";
 import { attachmentsToApi, streamChat, type ChatMessage } from "@/lib/chat-client";
 import { deriveTitle, type Conversation, type Msg, type UserMsg, type AIMsg } from "@/lib/conversations";
 import type { CompactionEntry } from "./CompactionNotice";
@@ -395,12 +395,6 @@ export function ChatArea({
           >
             <Sparkles size={12} strokeWidth={1.8} />
             <span>New</span>
-          </button>
-          <button className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-dim transition-colors hover:bg-elevated hover:text-ink">
-            <Share2 size={14} strokeWidth={1.8} />
-          </button>
-          <button className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-dim transition-colors hover:bg-elevated hover:text-ink">
-            <MoreHorizontal size={15} strokeWidth={1.8} />
           </button>
         </div>
       </header>

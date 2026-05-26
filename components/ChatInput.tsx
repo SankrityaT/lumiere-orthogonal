@@ -344,7 +344,7 @@ export function ChatInput({ onSubmit, isGenerating, onStop, disabled }: ChatInpu
 
           {/* Footer microcopy */}
           <div className="mt-3 text-center text-[11px] text-ink-muted">
-            Lumière can make mistakes. Verify important details.
+            Orthogonal Chat can make mistakes. Verify important details.
           </div>
         </div>
       </div>

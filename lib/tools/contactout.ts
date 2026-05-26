@@ -61,7 +61,11 @@ const contactout: ToolModule = {
 
     if (args.linkedin_url) {
       endpointTag = "/v1/linkedin/enrich";
-      const query: Record<string, unknown> = { profile: args.linkedin_url, profile_only: !args.include_phone };
+      // Orthogonal /v1/run validates query as strings — coerce the boolean
+      const query: Record<string, unknown> = {
+        profile: args.linkedin_url,
+        profile_only: args.include_phone ? "false" : "true",
+      };
       result = await ctx.call({ api: "contactout", path: endpointTag, query, cacheTier: "enrichment" });
       calls.push({ callId: result.callId, api: "contactout", path: endpointTag, args: query, result });
     } else if (args.email) {

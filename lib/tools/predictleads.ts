@@ -65,12 +65,15 @@ const company_signals: ToolModule = {
     const limit = Math.min(25, Math.max(1, args.limit ?? 5));
     const calls: ToolCallTrace[] = [];
 
-    // Parallel per-kind calls
+    // Parallel per-kind calls.
+    // Orthogonal /v1/run validates query params as STRINGS (catalog says
+    // `limit: integer` but the runtime validator rejects numbers with
+    // "Expected string, received number"). Coerce here.
     const out = await Promise.all(
       kinds.map(async (kind) => {
         const path = `/v3/companies/${encodeURIComponent(args.domain!)}/${PATH_BY_KIND[kind]}`;
-        const query: Record<string, unknown> = { limit };
-        if (kind === "jobs") query.active_only = true;
+        const query: Record<string, unknown> = { limit: String(limit) };
+        if (kind === "jobs") query.active_only = "true";
         const r = await ctx.call({
           api: "predictleads",
           path,

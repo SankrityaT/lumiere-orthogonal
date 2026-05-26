@@ -397,19 +397,28 @@ export function WebResultsCard({ payload }: { payload: { query: string; results:
 
 interface DraftPayload {
   draft_id: string;
-  to: string;
   subject: string;
   body: string;
+  suggested_recipients?: string[];
   footer_note?: string;
   reason?: string;
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export function EmailDraftCard({ payload }: { payload: DraftPayload }) {
+  const [recipient, setRecipient] = useState("");
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "failed">("idle");
   const [error, setError] = useState<string | null>(null);
-  const [sentMeta, setSentMeta] = useState<{ messageId?: string; used?: number; cap?: number } | null>(null);
+  const [sentMeta, setSentMeta] = useState<{ messageId?: string; used?: number; cap?: number; sentTo?: string } | null>(
+    null,
+  );
+
+  const recipientValid = EMAIL_RE.test(recipient.trim());
+  const canSend = recipientValid && status === "idle";
 
   const send = async () => {
+    if (!recipientValid) return;
     setStatus("sending");
     setError(null);
     try {
@@ -417,7 +426,7 @@ export function EmailDraftCard({ payload }: { payload: DraftPayload }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ draft_id: payload.draft_id, confirmed: true }),
+        body: JSON.stringify({ draft_id: payload.draft_id, to: recipient.trim(), confirmed: true }),
       });
       const j = await res.json();
       if (!res.ok || !j.ok) {
@@ -425,7 +434,12 @@ export function EmailDraftCard({ payload }: { payload: DraftPayload }) {
         setError(j.error ?? `HTTP ${res.status}`);
         return;
       }
-      setSentMeta({ messageId: j.message_id, used: j.used, cap: j.cap });
+      setSentMeta({
+        messageId: j.message_id,
+        used: j.used,
+        cap: j.cap,
+        sentTo: j.sent_to ?? recipient.trim(),
+      });
       setStatus("sent");
     } catch (err) {
       setStatus("failed");
@@ -441,8 +455,55 @@ export function EmailDraftCard({ payload }: { payload: DraftPayload }) {
           {payload.reason}
         </div>
       )}
+
+      {/* Recipient field — agent never picks this. User types here. */}
+      <div className="mb-2 rounded-lg border border-amber-400/30 bg-amber-400/5 p-2.5">
+        <div className="mb-1.5 flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.12em] text-amber-400/90">
+          <AlertTriangle size={10} strokeWidth={1.8} />
+          you choose the recipient — the agent never does
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="w-14 font-mono text-[10.5px] uppercase tracking-[0.1em] text-ink-muted">to</span>
+          <input
+            type="email"
+            value={recipient}
+            onChange={(e) => {
+              setRecipient(e.target.value);
+              if (status === "failed") {
+                setStatus("idle");
+                setError(null);
+              }
+            }}
+            disabled={status !== "idle" && status !== "failed"}
+            placeholder="someone@example.com"
+            className={[
+              "no-default-focus flex-1 rounded border bg-bg px-2 py-1 font-mono text-[12px] text-ink placeholder:text-ink-muted/60",
+              recipient.length > 0 && !recipientValid
+                ? "border-red-400/40 focus:border-red-400/60"
+                : "border-border focus:border-accent/50",
+            ].join(" ")}
+            spellCheck={false}
+            autoComplete="off"
+          />
+        </div>
+        {payload.suggested_recipients && payload.suggested_recipients.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <span className="text-[10.5px] italic text-ink-muted">agent suggested:</span>
+            {payload.suggested_recipients.slice(0, 5).map((addr) => (
+              <button
+                key={addr}
+                onClick={() => setRecipient(addr)}
+                className="rounded border border-border bg-elevated px-1.5 py-0.5 font-mono text-[10.5px] text-ink-dim transition-colors hover:border-accent/40 hover:text-ink"
+                title="Click to fill — you can still edit before sending"
+              >
+                {addr}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="space-y-1">
-        <Row label="to" value={payload.to} mono />
         <Row label="subject" value={payload.subject} />
       </div>
       <div className="mt-2 rounded-lg border border-border/60 bg-elevated/30 p-2.5 text-[12px] leading-relaxed text-ink whitespace-pre-wrap">
@@ -452,20 +513,26 @@ export function EmailDraftCard({ payload }: { payload: DraftPayload }) {
         <div className="mt-1.5 text-[10.5px] italic text-ink-muted">{payload.footer_note}</div>
       )}
       <div className="mt-3 flex items-center gap-2">
-        {status === "idle" && (
+        {(status === "idle" || status === "failed") && (
           <button
             onClick={send}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-bg transition-all hover:bg-accent-strong active:scale-95"
+            disabled={!canSend}
+            className={[
+              "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-all",
+              canSend
+                ? "bg-accent text-bg hover:bg-accent-strong active:scale-95"
+                : "cursor-not-allowed bg-elevated text-ink-muted",
+            ].join(" ")}
+            title={canSend ? "Send (recipient is on the allowlist gate server-side)" : "Enter a recipient first"}
           >
             <Send size={11} strokeWidth={2.2} /> Send
           </button>
         )}
-        {status === "sending" && (
-          <span className="text-[12px] italic text-ink-dim">sending…</span>
-        )}
+        {status === "sending" && <span className="text-[12px] italic text-ink-dim">sending…</span>}
         {status === "sent" && (
-          <span className="inline-flex items-center gap-1.5 text-[12px] text-accent">
-            <Check size={12} strokeWidth={2.2} /> Sent
+          <span className="inline-flex flex-wrap items-center gap-1.5 text-[12px] text-accent">
+            <Check size={12} strokeWidth={2.2} /> Sent to{" "}
+            <span className="font-mono">{sentMeta?.sentTo}</span>
             {sentMeta?.messageId && (
               <span className="font-mono text-[10.5px] text-ink-muted">{sentMeta.messageId.slice(0, 16)}…</span>
             )}
@@ -474,10 +541,9 @@ export function EmailDraftCard({ payload }: { payload: DraftPayload }) {
             )}
           </span>
         )}
-        {status === "failed" && (
-          <span className="inline-flex items-center gap-1.5 text-[12px] text-red-400">
-            <ZapOff size={12} strokeWidth={2} /> {error}
-            <button onClick={send} className="ml-1 underline">retry</button>
+        {status === "failed" && error && (
+          <span className="inline-flex items-start gap-1.5 text-[12px] text-red-400">
+            <ZapOff size={12} strokeWidth={2} className="mt-0.5 shrink-0" /> {error}
           </span>
         )}
       </div>

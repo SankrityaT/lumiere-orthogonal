@@ -1,175 +1,231 @@
 # Orthogonal Chat
 
-A chat app where the assistant has live access to Orthogonal's unified API catalog (55+ providers behind one key). The agent picks the right tool for each turn — Apollo for prospecting, ContactOut for enrichment, PredictLeads for funding/jobs/news, Tavily for the web, AgentMail for outreach (draft + user-confirmed send), plus two escape-hatch tools that cover the remaining 50.
+**Live demo:** _(deploy URL goes here)_
+**Repo:** https://github.com/SankrityaT/lumiere-orthogonal
 
-Built for the Orthogonal take-home. Stack: Next.js 16 App Router · React 19 · TypeScript · OpenAI tool-calling (gpt-5-mini, streaming) · `/v1/run` direct against `api.orth.sh` · Neon Postgres (Drizzle) · Upstash Redis · Tailwind · framer-motion.
+A chat app where the assistant calls Orthogonal's unified API catalog (55+ providers behind one key) and renders real results inline.
+
+**Demo arc:** `Find 3 senior engineers at Stripe → enrich their contact info → check Stripe's recent funding signals → search the web for Stripe news → draft an outreach email (you pick the recipient, the agent never does).`
+
+---
+
+## Approach
+
+The brief asks five questions: context bloat, persistence, system design, concurrent users, resilience under failure. I treated those as the rubric and built the engineering-judgment surfaces explicitly.
+
+### Tool surface (5 dedicated + 2 escape hatches)
+
+Orthogonal exposes 55 verified APIs. I wired five tools that map cleanly to the GTM-chat arc, plus two universal escape hatches so the agent can reach the other 50:
+
+| Tool | Provider | What it does |
+|---|---|---|
+| `apollo_search_people` | Apollo | Search 210M+ contacts by role/seniority/location; optionally enrich top N with email/phone |
+| `enrich_contact` | ContactOut | Single-person enrichment by LinkedIn / email / name+company |
+| `company_signals` | PredictLeads | Parallel fetch of funding events + job openings + news for a domain |
+| `web_search` | Tavily | Live web with cited results |
+| `send_email` | AgentMail | Draft preview with **user-supplied recipient** + server-side allowlist (see §Trade-offs) |
+| `orth_discover` | Orthogonal `/v1/search` | Natural-language catalog search |
+| `orth_call` | Orthogonal `/v1/run` | Direct passthrough to any of the 55 providers |
+
+### The proof: live dual-track context bars
+
+The header carries two stacked horizontal bars, both computed with the same `o200k_base` tokenizer (`js-tiktoken`):
+
+- **ctx** — what we actually send to OpenAI after sliding-window trim + tool-result summarization
+- **naive** — what a chatbot without compaction *would have* sent (full untouched history, raw tool JSON blobs)
+
+When naive crosses `MODEL_MAX_TOKENS` the bar turns red and shows the overflow in tokens. When the compaction algorithm fires, an inline italic notice in the chat says exactly what it did: *"summarized 6 tool results — sent 31k tokens. Without compaction we'd be at 98k tokens (76% of limit)."* No estimation, no mocked values.
+
+---
+
+## System design
+
+### Architecture
+
+```mermaid
+flowchart TB
+  Browser[Browser · Chat UI<br/>conversations.ts ⇆ localStorage] -->|POST /api/chat| Chat[/api/chat route/]
+  Browser -->|POST /api/chat/confirm-send| Send[/confirm-send route/]
+  Browser -->|GET /api/conversations| Convos[/conversations route/]
+
+  Chat -->|signed cookie<br/>+ rate-limit<br/>+ budget messages| Loop[OpenAI tool loop<br/>NDJSON stream out]
+  Loop -->|per tool call| Guard{guardedCall}
+  Guard --> CB[Circuit breaker<br/>per provider<br/>5 fail · 60s open]
+  Guard --> Cache[(Cache<br/>sha256 key<br/>tiered TTL<br/>+ in-flight coalesce)]
+  Cache -->|miss| Orth[lib/orthogonal.ts<br/>POST api.orth.sh/v1/run<br/>5s timeout · 1 retry jitter]
+  Orth --> Providers[(55 providers<br/>Apollo · ContactOut · PredictLeads<br/>Tavily · AgentMail · …)]
+
+  Loop -.fire and forget.-> Persist[(Neon Postgres<br/>users · conversations<br/>messages · tool_calls)]
+  Cache -.shared state.-> Redis[(Upstash Redis)]
+  Send --> Allowlist{Recipient allowlist}
+  Allowlist -->|pass| Orth
+  Allowlist -->|block| Browser
+```
+
+### Schema (Drizzle, 4 tables)
+
+```ts
+users          (id PK uuid, created_at)                    // anonymous, cookie-keyed
+conversations  (id PK, user_id FK→users, title, created_at, updated_at)
+                ↳ index (user_id, updated_at)              // covers the sidebar
+messages       (id PK, conversation_id FK, role, content,
+                tool_payload jsonb, token_count, created_at)
+                ↳ index (conversation_id, created_at)
+tool_calls     (id PK, conversation_id FK, message_id FK,
+                tool_name, provider, path, args jsonb, response jsonb,
+                error, price_cents int, cached_from_id, latency_ms, created_at)
+                ↳ index (conversation_id, created_at)
+                ↳ index (provider, created_at)             // covers analytics
+```
+
+The `tool_calls` table is the analytics ledger — one row per guarded call, with `price_cents` (what we paid Orthogonal), `cached_from_id` (the original row if we served from cache), and `latency_ms`. `GROUP BY provider, date(created_at)` answers "what's our hit rate per provider this week and cost per user-turn" in one query.
+
+### Request lifecycle
+
+1. Browser POSTs `/api/chat { messages, conversationId }` with signed `orth_uid` cookie.
+2. Route resolves user → checks per-user **rate limit** (20 req/60s sliding window via Upstash) → if breached, 429.
+3. Builds `[system_prompt, ...client_history]` and passes through **`budgetMessages()`** — real `o200k_base` tokenization, tracks both `actual_tokens` (post-trim) and `naive_tokens` (raw); emits a `context_update` NDJSON event up front.
+4. If compaction fired, emits a `compaction` event with `would_have_crashed: bool` so the UI inlines the notice.
+5. Streams from OpenAI with `tool_choice: "auto"` + `parallel_tool_calls: true`. Accumulates `tool_calls[]` deltas. On `finish_reason: "tool_calls"` → dispatch.
+6. Each tool call → `guardedCall()` → **circuit-breaker gate** → **cache key** `sha256(api+path+sortedQuery)` → **in-flight coalesce** (30s) → on miss, `5s timeout` + 1 retry on 5xx/429 with jitter → record `priceCents` + `latencyMs`.
+7. Per call emits `tool_call_start` (running card) then `tool_call_result` (rendered card) with `cached:bool` + `price_cents` so the UI ticks the cost meter in real time.
+8. Loop until model returns `finish_reason: "stop"`, MAX 6 iterations, then `done`.
+9. Stream closes → **fire-and-forget** `persistTurn()` writes user message + assistant message + per-tool rows to Neon. Errors logged, never block the response.
+
+### Handling context bloat (brief Q1)
+
+The brief asks "as you build and use your chat, you'll notice the context window fills up. How does your app handle this?"
+
+Answer is in `lib/context.ts` + the live UI bars:
+
+- **Real tokenization both sides.** `js-tiktoken` `o200k_base` (the encoder GPT-5 uses). No 4-chars-per-token estimation.
+- **Step 1 — Summarize.** Tool messages older than the current turn get collapsed: `[apollo_search_people prior result, summarized] 10 items`. The raw JSON (often 5–10k tokens) becomes ~30 tokens.
+- **Step 2 — Drop.** If still over budget, peel oldest non-system messages until under `MODEL_MAX_TOKENS - 4000` headroom.
+- **Track both numbers always.** `naive_tokens` is the count of the untouched input, computed in parallel. When `naive > model_max` the UI's naive bar turns red with `+Xk overflow` — visual proof that without our compaction, this request would have 400'd.
+- **Inline accountability.** Every time compaction fires, an italic notice in the chat: *"summarized 4 tool results — sent 23k. Without compaction we'd be at 87k (68% of limit)."* Or, when over the line: *"…we would have crashed at this message."*
+
+The header isn't a vanity meter — it's the whole point. Run a few enrich-heavy turns and watch the bars diverge.
+
+### Handling concurrent users on the same APIs (brief Q4)
+
+The brief asks "how would you handle multiple users hitting the same APIs concurrently?" The key word is **same**.
+
+Two layers, both keyed by `sha256(provider + path + sortedQuery)` so identical payloads dedupe regardless of who's asking:
+
+1. **In-flight coalescing (in-process, 30s).** If two requests for the same key arrive within 30s, the second `await`s the first's promise. One upstream call, two responses. Directly answers the "same time, same query, different users" case.
+2. **Redis response cache (tiered TTL).**
+   - **24h** for enrichments (Apollo `people/match`, ContactOut enrich) — stable data
+   - **5min** for news / financing / web search — high churn
+   - **1h** default
+
+Cache hits return `priceCents: 0` and surface a `cached` badge in the UI tool card. In `tool_calls` they get a `cached_from_id` pointing at the original row.
+
+I verified the cache layer live during smoke: same Apollo search fired twice in one conversation showed a `cached` badge on the second card. ✓
+
+### Handling slow / down APIs (brief Q5)
+
+The brief asks "what happens when an API is slow or down? How does the chat behave?"
+
+**Server side:**
+- **Circuit breaker per provider** (`lib/circuit-breaker.ts`). 5 consecutive failures → open for 60s. While open, calls fail-fast with a synthetic "Apollo circuit open (45s left)" response so the agent can adapt mid-turn instead of waiting through every timeout.
+- **5s timeout** per Orthogonal call via `AbortController`.
+- **1 retry with jitter** on HTTP 5xx / 429. Sleep 150–350ms, retry once.
+- **Per-tool isolation.** If Apollo dies, web_search still runs in the same turn (parallel tool calls don't share fate).
+
+**Chat side (UX):**
+- Errored tool calls render the card in a **muted red state with the error inline** + a **Retry button** that re-fires the user's last message.
+- The rest of the assistant turn keeps streaming — one bad tool doesn't blow up the response.
+- The streaming protocol is NDJSON, so partial state arrives in real time: tool 1 succeeds → tool 2 fails (retry button visible) → final text continues to stream.
+
+### Scaling story
+
+| Bottleneck | Today | 100 users | 10k users | 1M users |
+|---|---|---|---|---|
+| `/api/chat` cost | pay-as-you-go OpenAI + Orthogonal | Same | Same | Same |
+| Postgres reads | None on chat path (write-only) | Fine | Fine — `(user_id, updated_at)` index covers sidebar | Read replica for sidebar; partition `messages` by month |
+| Postgres writes | 1 conversation upsert + N tool_calls/turn | Fine | Fine — Neon scales | Batch `tool_calls` writes; consider event log → ClickHouse |
+| Redis | Cache + rate-limit + drafts | Upstash free | Paid ($10/mo) | Per-region with read-through; promote breaker from process to Redis |
+| Circuit breaker | In-process Map per instance | Acceptable | **Move to Redis** so warm instances share state | Already there |
+| Send cap | Redis `INCR` per user | Fine | Fine | Fine |
+| Tool execution | `Promise.all` in route | Fine | Fine | Long-running tools → **Vercel Queues** so route stays under 60s |
+| AgentMail inboxes | One shared `[DEMO]` inbox | Per-tenant inbox | Inbox pool | Per-account inbox at signup + scheduled cleanup |
+
+Two real architectural moves between today and 10k users: **(1)** promote the circuit-breaker state from in-process Map to Redis, **(2)** move expensive tools (deep enrich, web crawl) to Vercel Queues so `/api/chat` stays inside the 300s function timeout. Everything else is index + quota tuning.
+
+---
+
+## Trade-offs (what I chose and why)
+
+**5 dedicated tools + 2 escape hatches, not 55 dedicated.** Wiring 55 sloppy provider modules would have been worse than 5 well-handled ones. The dedicated tools have provider-specific cards, sensible cache tiers, and ergonomic schemas. `orth_discover` + `orth_call` cover the long tail: agent finds the right slug via natural-language search, then calls it directly. The brief evaluates judgment, not coverage.
+
+**Rolled my own `lib/orthogonal.ts` instead of `@orth/sdk`.** The SDK exists (`@orth/sdk` v0.3.2) but has two real problems: (1) its `RunResponse.price` is typed as `string`, but the wire returns `priceCents` as a `number`. (2) it doesn't expose `requestId` or support `method` override for DELETE/PATCH (which AgentMail needs). My 130-line `OrthogonalClient` types the wire correctly, supports method override, and returns `requestId` for logging. Same surface, honest types.
+
+**Anonymous signed cookie, not real auth.** A `orth_uid` cookie signed with HMAC-SHA256 gives stable identity across reloads without account ceremony. For the take-home this is the right scope; for production swap in Clerk (native Vercel Marketplace).
+
+**Drizzle over Prisma.** Both are great. Drizzle wins for serverless: no separate query engine binary, no shadow DB for migrations, schema lives next to the code as TypeScript. The `tool_calls` analytics queries (`GROUP BY provider, …`) are also more natural in Drizzle's SQL-first DSL.
+
+**Agent NEVER picks email recipients.** Defense in depth on `send_email`: the tool schema doesn't even expose a `to` field; the LLM can only set `subject + body + suggested_recipients[]`. The UI shows an editable To: input the user must fill in; Send is disabled until valid. The server enforces an allowlist (`@orthogonal.com`, `@orthogonal.sh`, `@example.com`, the inbox itself, plus optional `EMAIL_SEND_ALLOWLIST` env). A misaligned LLM cannot get an email out to an Apollo contact under any circumstance.
+
+**Graceful degradation, not hard dependencies.** `DATABASE_URL` empty → conversations live in localStorage. `UPSTASH_REDIS_REST_*` empty → cache/rate-limit/breaker fall back to in-process Maps. Anyone can clone, drop in just `OPENAI_API_KEY` + `ORTHOGONAL_API_KEY`, and the app runs. Production wiring is one env flip.
 
 ---
 
 ## Running locally
 
 ```bash
+git clone https://github.com/SankrityaT/lumiere-orthogonal && cd lumiere-orthogonal
 npm install
-cp .env.example .env.local       # fill in OPENAI_API_KEY + ORTHOGONAL_API_KEY at minimum
-npm run dev
+cp .env.example .env.local        # fill in OPENAI_API_KEY + ORTHOGONAL_API_KEY at minimum
+npm run dev                       # localhost:3000
 ```
 
-`DATABASE_URL` and `UPSTASH_REDIS_REST_*` are optional — the app degrades gracefully. Without them, conversations live in localStorage, the response cache and rate-limit / circuit breaker / draft store fall back to in-process Maps. The full architecture is exercised in both modes.
-
-If you have a Neon database:
+Postgres (optional but recommended):
 
 ```bash
-npm run db:generate   # regenerate SQL from lib/db/schema.ts
-npm run db:push       # or `npm run db:migrate` against DATABASE_URL
+# Set DATABASE_URL in .env.local (Neon serverless connection string)
+npm run db:push                   # idempotent schema push
+```
+
+AgentMail send (optional, for the email demo):
+
+1. In the chat, ask the agent: *"Use orth_call to POST /v0/inboxes with body {username: 'demo-take-home', domain: 'agentmail.to'}"*
+2. Copy the returned `inbox_id` into `AGENTMAIL_INBOX_ID` in `.env.local`
+3. Optionally set `AGENTMAIL_INBOX_EMAIL` (e.g. `demo-take-home@agentmail.to`) so the "send to yourself" allowlist case works
+4. ($2/mo per inbox, auto-deleted after 30d inactivity)
+
+Required env at minimum:
+
+```env
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-5-mini
+ORTHOGONAL_API_KEY=orth_live_...
+```
+
+Optional but recommended:
+
+```env
+DATABASE_URL=postgresql://...
+UPSTASH_REDIS_REST_URL=https://...
+UPSTASH_REDIS_REST_TOKEN=...
+COOKIE_SECRET=<32+ random chars>
+AGENTMAIL_INBOX_ID=
+AGENTMAIL_INBOX_EMAIL=
+EMAIL_SEND_ALLOWLIST=alice@partner.com,@trusted.co
 ```
 
 ---
 
-## 1. Approach
+## What I'd do with more time
 
-The brief asks for a chat with real Orthogonal data + thoughtful answers to five things:
-context bloat, persistence, system design, concurrency, resilience. I treated those as the rubric.
-
-**Scope chosen deliberately.** Orthogonal exposes 55 verified APIs. Wiring all of them sloppily would have shown poor judgment. I picked 5 dedicated tools that map cleanly to the GTM-chat demo arc the brief implies — *find → enrich → signal → search → outreach* — and added 2 escape-hatch tools so the agent can still reach the other 50:
-
-| Tool | Provider | What it does |
-|---|---|---|
-| `apollo_search_people` | Apollo | People search with optional contact enrichment for top N |
-| `enrich_contact` | ContactOut | Single-person enrichment (email/phone/role) by LinkedIn / email / name |
-| `company_signals` | PredictLeads | Parallel fetch of funding events + job openings + news for a domain |
-| `web_search` | Tavily | Live web search with citations rendered as inline `[1]` chips |
-| `send_email` | AgentMail | **Draft + user-confirm** flow. Tool never sends; user clicks Send in the UI; capped at 3 sends/session; subject auto-prefixed with `[DEMO]`; footer auto-appended |
-| `orth_discover` | Orthogonal `/v1/search` | Natural-language search across the full catalog |
-| `orth_call` | Orthogonal `/v1/run` | Direct passthrough to any provider after `orth_discover` surfaces it |
-
-The chat is built around **the brief's hardest question**: "how does your app handle the context window filling up?" My answer is built into the UI: two stacked bars in the header, with real `o200k_base` tokenization on both sides.
-
-- **`ctx` bar** — what we actually send to OpenAI after sliding-window trimming + tool-result summarization.
-- **`naive` bar** — what a chatbot without compaction *would have* sent (full untouched history, every raw tool blob). When this exceeds the model's context limit, the bar turns red and a marker shows the overflow in tokens.
-
-When compaction fires, an inline italic notice in the chat says "*summarized 6 tool results — sent 31k tokens. Without compaction we'd be at 98k tokens (76% of limit).*" Or, when the dual-track shows we crossed the line: "*…we would have crashed at this message.*"
-
-Both numbers are computed with the same encoder (`js-tiktoken` `o200k_base`, what GPT-5 actually uses). No estimation. The UI is the proof.
-
----
-
-## 2. System design
-
-### Architecture
-
-```
-                              ┌─────────────────────────────────────┐
-                              │           Browser (chat UI)         │
-                              │  conversations.ts → localStorage     │
-                              └────────────┬─────────────┬──────────┘
-                                  POST /api/chat    POST /api/chat/confirm-send
-                                       │                 │
-                              ╔════════ Vercel Fluid Compute (Node 24) ════════╗
-                              ║                                                ║
-            ┌─────────────────╨───────┐                ┌───────────────────────╨──┐
-            │  app/api/chat/route.ts  │                │ confirm-send/route.ts    │
-            │  • signed cookie → uid  │                │ verify draft + cap      │
-            │  • rate-limit (Upstash) │                │  → Orthogonal AgentMail │
-            │  • budget messages      │                └─────────────────────────┘
-            │  • OpenAI tool loop     │
-            │  • dispatch tool exec   │
-            │  • emit NDJSON stream   │
-            └────────┬────────────────┘
-                     │
-                     │ each tool call goes through guardedCall():
-                     │
-      ┌──────────────▼──────────────┐ ┌─────────────────────┐
-      │  lib/circuit-breaker.ts     │ │ lib/cache.ts        │
-      │  per-provider, 5 fail / 60s │ │ sha256(api+path+q)  │
-      │  open → fail-fast           │ │ tiered TTL          │
-      └──────────────┬──────────────┘ │ + in-flight coalesce│
-                     │                └─────────┬───────────┘
-                     ▼                          │
-      ┌──────────────────────────────┐          │ cache miss
-      │  lib/orthogonal.ts           │ ◄────────┘
-      │  POST api.orth.sh/v1/run     │
-      │  5s timeout · 1 retry/jitter │
-      └──────────────┬───────────────┘
-                     ▼
-      ┌──────────────────────────────┐
-      │ Orthogonal · 55 providers    │
-      │ Apollo  ContactOut  Tavily   │
-      │ PredictLeads  AgentMail  …   │
-      └──────────────────────────────┘
-
-   Persistence (lazy, only when DATABASE_URL set):
-      users · conversations · messages · tool_calls
-      (every guarded call persists provider, path, args, response,
-       price_cents, cached_from_id, latency_ms)
-```
-
-### Databases — why two
-
-The brief asks for "database(s)" — plural. I use both and they do different work:
-
-- **Postgres (Neon serverless via Drizzle)** is the durable system of record. Schema is 4 tables: `users`, `conversations`, `messages`, `tool_calls`. Conversations + messages survive across devices and reloads. The `tool_calls` table is where the cost / cache-hit / per-provider analytics live — one row per guarded call with `price_cents`, `cached_from_id`, `latency_ms`. A single `GROUP BY provider, date(created_at)` answers "what's our hit rate per provider this week, and what's our cost-per-user-turn?"
-- **Upstash Redis** is the volatile coordination layer. It holds the response cache (with tiered TTLs), the per-user rate-limit counter, and the per-user send-count for the email confirm flow. Hot, ephemeral, key/value. Pgsql is the wrong tool for "shared 5-minute TTL state across 12 cold serverless instances."
-
-Both are **lazy and graceful**: if `DATABASE_URL` is empty, conversations stay client-only (localStorage in the browser) and the take-home demo still works. If Upstash creds are empty, every Redis-backed module falls back to a process-local Map. The architecture exists in both modes; production turns on the persistent backends with a single env flip.
-
-### Caching tiers
-
-The brief asks "how would you handle multiple users hitting the **same** APIs concurrently?" Two layers, both keyed by `sha256(provider + path + sortedQuery)` so identical payloads dedupe regardless of who's asking:
-
-1. **In-flight coalescing (in-process, 30s).** If two requests hit the same cache key within 30s, the second one *awaits* the first's promise instead of firing a duplicate upstream call. This is the answer to "two users asking 'tell me about Stripe' within the same second."
-2. **Response cache (Redis, tiered TTL).**
-   - **24h** for enrichments (`apollo people/match`, `contactout enrich`, `tomba combined/find`) — stable data.
-   - **1h** default.
-   - **5min** for news / financing / web search — high churn.
-
-Cache hits return `priceCents: 0` and surface a `cached` badge in the UI tool card. In the DB they get a `cached_from_id` pointing at the original call so analytics distinguish "real call" from "served from cache."
-
-### Resilience — what happens when an API is slow or down
-
-Per Orthogonal call:
-1. **Circuit-breaker gate** — per-provider state. 5 consecutive failures → open for 60s. While open, calls fail-fast with a synthetic degraded response so the agent can adapt ("Apollo is unavailable") instead of waiting through every timeout.
-2. **5s timeout** — Orthogonal calls abort at 5s with `AbortController`.
-3. **1 retry with jitter** — on HTTP 5xx or 429, sleep 150–350ms, retry once.
-4. **Per-tool isolation** — if Apollo dies, web_search still works in the same turn. Parallel tool calls don't share fate.
-
-**UX side.** When a tool errors, the tool card renders muted with the error reason inline + a **Retry** button (re-fires the last user message). The rest of the assistant turn continues — one bad call doesn't blow up the whole response. The streaming protocol is NDJSON, so partial results render as they arrive; the user sees thinking → tool 1 succeeds → tool 2 fails (with retry) → text response continues to stream.
-
-### Concurrency story
-
-- **Per-user rate limit**: 20 requests / 60s sliding window via `@upstash/ratelimit` keyed on the cookie uid.
-- **Per-user send cap**: max 3 emails / 24h via Redis `INCR` + `EXPIRE`. AgentMail won't burn the demo budget.
-- **Stateless route**: every `/api/chat` request is fully self-contained. The Neon driver and Redis client are HTTP-based and pool-free, so cold-starting under load doesn't compound.
-- **Fluid Compute on Vercel** reuses function instances across concurrent requests, which makes the in-process coalescing layer (above) actually load-bearing — a hot instance sees adjacent users on the same key.
-
-### Scaling — what changes at 100 / 10k / 1M users
-
-| Bottleneck | Today | 100 users | 10k users | 1M users |
-|---|---|---|---|---|
-| `/api/chat` cost | Per-turn OpenAI + Orthogonal calls | Same | Same | Same — pay-as-you-go |
-| Postgres reads | None for chat path (writes only) | Fine | Fine — `(user_id, updated_at)` index covers sidebar | Read replica for sidebar; partition `messages` by month |
-| Postgres writes | One conversation upsert + N tool_calls/turn | Fine | Fine — Neon scales | Batch tool_calls writes; consider event log → ClickHouse |
-| Redis | Cache + rate-limit + drafts | Upstash free tier | Paid tier ($10/mo) | Per-region Upstash with read-through; promote breaker state from process to Redis |
-| Circuit breaker | In-process Map (per-instance) | Acceptable | Move to Redis (shared state) | Already in Redis |
-| Send cap | Redis INCR per user | Fine | Fine | Fine |
-| Drafts | Redis with 1h TTL | Fine | Fine | Fine |
-| Tool execution | Promise.all in route | Fine | Fine | Pull expensive tools (deep enrich, web crawl) into Vercel Queues for durable, retried, out-of-band execution |
-| AgentMail inboxes | One shared `[DEMO]` inbox | Per-tenant inbox | Pool of inboxes | Spin per-account inboxes on signup, scheduled cleanup |
-
-The two real architectural moves between today and 10k users: **(1) promote the circuit breaker from in-process state to Redis** so all warm instances share it, **(2) move long-running tools (deep research, agent loops) to Vercel Queues** so `/api/chat` stays under 60s. Everything else is index/quota tuning.
-
----
-
-## 3. What I'd do with more time
-
-- **Eval harness.** Replay top user prompts against a fixed model + tool snapshot, score with an LLM judge, gate deploys on regressions. Right now I tested by using the chat — the brief's "as you build *and use* your chat" line is exactly the right method but a real product needs automated coverage.
-- **pgvector semantic memory.** For long-running conversations, embed the last N summarized turns and retrieve the most relevant 3 instead of always keeping the most recent. Sliding-window is the dumb-fast answer; vector retrieval is the right answer for hour-long sessions.
-- **Real auth.** Anonymous cookie + signed HMAC is fine for the take-home. For a real product, swap to Clerk (native Vercel Marketplace integration) so conversations follow the user across devices.
-- **Multi-tenant workspaces.** Schema is single-user. The change is one `workspace_id` column on every table + a middleware that derives workspace from subdomain.
-- **Live cost-per-turn breakdown.** The header shows total cost. The README's `tool_calls` table can answer per-provider cost; expose it in the UI ("this turn used Apollo 3x for $0.04, ContactOut 1x for $0.02").
-- **More provider cards.** Right now `orth_call` falls back to a generic JSON dropdown for the other 50 providers. Production would add typed cards for at least Tomba (email verification), Hunter, Fundable, OpenFunnel, and Coresignal.
-- **Tool-call streaming progress.** Apollo enrich-top-5 takes ~3s; the card sits in "calling Apollo…" state the whole time. Could stream per-person enrichment updates so people pop in one-by-one.
-- **AgentMail polish.** Per-user inbox creation, inbox switcher in settings, draft history, reply threading. Today's send is one-shot with a single shared inbox.
-- **Model routing via OpenRouter or the Vercel AI Gateway.** Currently hard-coded to `gpt-5-mini`. The gateway would let us fall back to Claude or Gemini on rate limits without code changes.
+- **Eval harness.** Replay top user prompts against a fixed model + tool snapshot, score with an LLM judge, gate deploys on regressions. The brief's "as you build *and use* your chat" line is the right method; automated coverage would protect it.
+- **pgvector semantic memory.** Sliding-window compaction is the dumb-fast answer. The right answer for hour-long sessions is embed every summarized turn and retrieve the most relevant 3-5 per new query.
+- **Real auth.** Anonymous cookie is fine for the take-home; Clerk (native Vercel Marketplace) is one config switch for accounts that follow users across devices.
+- **Multi-tenant workspaces.** Add `workspace_id` on every table + middleware derives it from subdomain. Same code, new tier.
+- **Tool-call streaming progress.** Apollo enrich-top-5 takes ~3s; the card sits in "calling Apollo…" the whole time. Could stream per-person enrichment as they complete.
+- **Live cost-per-turn breakdown.** Header shows total. The `tool_calls` table can answer per-provider per-turn; expose it as a tooltip ("this turn: Apollo 3× $0.04, ContactOut 1× $0.02").
+- **More provider cards.** `orth_call` falls back to a JSON dropdown for the other 50. Production would add typed cards for Tomba, Hunter, Fundable, OpenFunnel, Coresignal.
+- **AgentMail polish.** Per-user inbox creation, inbox switcher in settings, draft history, threading. Today's send is one-shot with a shared inbox.
+- **Model routing via Vercel AI Gateway.** Currently hard-coded to `gpt-5-mini`. The Gateway would let us fall back to Claude or Gemini on rate limits without code changes.
 - **CSV / Notion export.** Sales people want to dump an Apollo search to a sheet. Two endpoints + one button.
 
 ---
@@ -178,39 +234,34 @@ The two real architectural moves between today and 10k users: **(1) promote the 
 
 ```
 lib/
-  orthogonal.ts          thin /v1/run wrapper — typed correctly (priceCents:number, requestId)
+  orthogonal.ts          /v1/run wrapper (typed correctly: priceCents:number, requestId)
   openai.ts              client + tiktoken o200k_base counter
   context.ts             dual-track budgeter (actual + naive + crash detection)
   cache.ts               sha256-keyed two-layer cache (Redis + in-flight coalesce)
   circuit-breaker.ts     per-provider state machine
-  rate-limit.ts          @upstash/ratelimit, graceful no-op fallback
-  cookies.ts             signed HMAC anonymous user cookie
-  draft-store.ts         pending-email store for confirm-send flow
+  rate-limit.ts          @upstash/ratelimit sliding window
+  cookies.ts             signed HMAC anonymous uid
+  draft-store.ts         pending-email store for the confirm-send flow
   redis.ts / db/         lazy clients, graceful fallback
   tools/
     _runtime.ts          guardedCall — gate → cache → timeout → retry → record
     _types.ts            tool module interface
-    apollo.ts ... orth_call.ts   one file per tool + registry
+    apollo / contactout / predictleads / websearch /
+      agentmail / orth_discover / orth_call / index.ts
 
 app/
   api/chat/route.ts                 the loop — OpenAI streaming, tool dispatch, NDJSON
-  api/chat/confirm-send/route.ts    user-clicked email send
-  api/conversations/route.ts        list user's conversations (DB-backed, lazy)
-  api/conversations/[id]/route.ts   single conversation with message history
+  api/chat/confirm-send/route.ts    user-clicked email send with allowlist gate
+  api/conversations/route.ts        list (db-backed, graceful)
+  api/conversations/[id]/route.ts   single conversation with reconstructed history
   chat/page.tsx                     shell + state
   page.tsx                          landing
 
 components/
-  ChatArea.tsx           live two-bar context meter, cost meter, event handlers
-  AIMessage.tsx          renders tool cards + compaction notices + streaming text
-  CompactionNotice.tsx   inline italic "we trimmed N messages, naive count was Xk"
-  tool-cards/index.tsx   provider-specific cards: Apollo people, contact, signals, web, draft, discover, generic
-  ...
+  ChatArea.tsx             live two-bar context meter + cost meter + event handlers
+  AIMessage.tsx            renders tool cards + compaction notices + streaming text
+  CompactionNotice.tsx     inline italic notice when sliding window or summarization fires
+  tool-cards/index.tsx     Apollo / Contact / Signals / Web / Email-draft / Discover / Generic
 
-drizzle/
-  0000_*.sql             initial schema migration
+drizzle/                   migrations
 ```
-
----
-
-Built with Claude Code. Brief acknowledged, scope locked twice, executed in 2 commits.
