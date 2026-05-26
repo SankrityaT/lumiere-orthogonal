@@ -64,10 +64,20 @@ export default function Home() {
   );
 
   const onNewConversation = useCallback(() => {
+    // If we're already sitting on an empty conversation, the button is a no-op.
+    // ChatGPT does the same thing — saves the user from creating duplicate blanks.
+    const current = activeId ? conversations.find((c) => c.id === activeId) : null;
+    if (current && current.messages.length === 0) return;
+
+    // Otherwise: create a new blank, and drop any other empty conversations
+    // from the sidebar so they don't pile up.
     const c = createNew();
-    setConversations((cur) => [...cur, c]);
+    setConversations((cur) => {
+      const cleaned = cur.filter((conv) => conv.messages.length > 0);
+      return [...cleaned, c];
+    });
     setActiveId(c.id);
-  }, []);
+  }, [activeId, conversations]);
 
   const onSelectConversation = useCallback((id: string) => {
     setActiveId(id);
