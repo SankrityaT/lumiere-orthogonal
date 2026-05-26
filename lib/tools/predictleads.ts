@@ -104,12 +104,13 @@ const company_signals: ToolModule = {
         jobs: normalized.jobs.length,
         news: normalized.news.length,
       },
-      // Pass full normalized data to LLM — the brief asks us to handle context
-      // bloat from API responses, so don't artificially shrink them here.
+      // L1 of our context strategy: pre-summarize tool responses at the source.
+      // Top 3 per kind keeps LLM payload ~500 tokens instead of the raw 5-10k.
+      // Full data still goes to the UI card.
       sample: {
-        financing: normalized.financing,
-        jobs: normalized.jobs,
-        news: normalized.news,
+        financing: normalized.financing.slice(0, 3),
+        jobs: normalized.jobs.slice(0, 3),
+        news: normalized.news.slice(0, 3),
       },
       errors: errors.length ? errors : undefined,
     });

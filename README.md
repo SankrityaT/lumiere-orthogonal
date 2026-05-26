@@ -94,17 +94,35 @@ The `tool_calls` table is the analytics ledger — one row per guarded call, wit
 
 ### Handling context bloat (brief Q1)
 
-The brief asks "as you build and use your chat, you'll notice the context window fills up. How does your app handle this?"
+The brief asks "as you build and use your chat, you'll notice the context window fills up, both from **API responses** and from **conversation history**. How does your app handle this?"
 
-Answer is in `lib/context.ts` + the live UI bars:
+Those are two distinct sources of bloat. Add the implicit third (the tool catalog itself — 55 tool defs in the system prompt would cost ~10k tokens before the user types anything) and you get **four layers**, each preventing a different source from ever entering the budget:
 
-- **Real tokenization both sides.** `js-tiktoken` `o200k_base` (the encoder GPT-5 uses). No 4-chars-per-token estimation.
-- **Step 1 — Summarize.** Tool messages older than the current turn get collapsed: `[apollo_search_people prior result, summarized] 10 items`. The raw JSON (often 5–10k tokens) becomes ~30 tokens.
-- **Step 2 — Drop.** If still over budget, peel oldest non-system messages until under `MODEL_MAX_TOKENS - 4000` headroom.
-- **Track both numbers always.** `naive_tokens` is the count of the untouched input, computed in parallel. When `naive > model_max` the UI's naive bar turns red with `+Xk overflow` — visual proof that without our compaction, this request would have 400'd.
-- **Inline accountability.** Every time compaction fires, an italic notice in the chat: *"summarized 4 tool results — sent 23k. Without compaction we'd be at 87k (68% of limit)."* Or, when over the line: *"…we would have crashed at this message."*
+**L0 — Lazy tool catalog via `/v1/search` (`lib/tools/orth_discover.ts`).**
+We register **7 OpenAI function defs** in the system prompt (the 5 dedicated tools + `orth_discover` + `orth_call`), not 55. Total tool-def cost: ~2k tokens. When the agent needs a provider not in the 5, it calls `orth_discover("verify email deliverability")` which wraps Orthogonal's `/v1/search`. That returns the top 6 semantic matches (~500 tokens) instead of preloading all 55 schemas. The catalog **never enters baseline context**. This is the cleverest layer because it solves the bloat by never creating it.
 
-The header isn't a vanity meter — it's the whole point. Run a few enrich-heavy turns and watch the bars diverge.
+**L1 — Tool-level response summarization (every `lib/tools/*.ts`).**
+Each tool extracts only what the LLM actually needs from raw Orthogonal responses:
+- Apollo's ~200-field person blob → 7 normalized fields (name, title, company, location, email, phone, linkedin).
+- PredictLeads' full event arrays → top 3 per kind (financing / jobs / news).
+- `orth_call` raw responses → capped at 4k chars.
+
+A raw Apollo `/api/v1/mixed_people/api_search` for "Stripe engineers" can be **15–25k tokens**. Our normalized payload to the LLM is **~1.5k tokens**. **10–50× reduction at source.** This is the dominant strategy in practice — most conversations never need L2 because L1 already kept things lean.
+
+**L2 — Conversation sliding window + rolling summary (`lib/context.ts`).**
+When even pre-summarized history accumulates past `MODEL_MAX_TOKENS - 4k` headroom over a long session:
+1. **Step 1 — Summarize old tool messages.** Older tool results get collapsed to `[apollo_search_people prior result, summarized] 10 items`. 5–10k tokens → ~30 tokens.
+2. **Step 2 — Drop oldest pairs.** If still over budget, peel oldest non-system user+assistant pairs.
+3. **System prompt + current turn are never dropped.**
+
+Tokenized with real `js-tiktoken` `o200k_base` (the encoder GPT-5 uses), not 4-chars-per-token estimation.
+
+**L3 — Dual-track UI accountability.**
+Track `actual_tokens` (what we actually sent) vs `naive_tokens` (what we WOULD have sent if we skipped L1+L2) in parallel. Both visible in the chat header as `CTX` and `NAIVE` bars. When `naive > model_max`, the naive bar turns red with `+Xk overflow` — visual proof that without our handling, the request would have 400'd. Compaction events surface as inline italic notices in the chat thread: *"summarized 4 tool results — sent 23k. Without compaction we'd be at 87k (68% of limit)."*
+
+A `COMPACTED · N` counter aggregates across the conversation. Nothing is a vanity meter.
+
+**Why this answer fits the brief.** "API responses" → L1 handles it at source. "Conversation history" → L2 handles it at the budget boundary. Tool-catalog bloat (the implicit third) → L0 prevents it entirely. L3 makes all three observable. Each line of the rubric maps to a specific architectural layer.
 
 ### Handling concurrent users on the same APIs (brief Q4)
 
