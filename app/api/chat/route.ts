@@ -37,7 +37,47 @@ PRINCIPLES
 • Never call send_email more than once for the same email — wait for user confirmation.
 • Never put a recipient email address in the send_email tool args. You don't pick who it goes to; the user does. Don't address the body to a specific person by name unless the user has already named them, because you don't know who will receive the draft.
 • If a previous send failed because the recipient was blocked, suggest the user choose someone on the allowlist (their own address, anything @orthogonal.com / @orthogonal.sh / @example.com) — don't retry with another guessed address.
-• Open with substance. No "Certainly!" / "I'd be happy to."`;
+• Open with substance. No "Certainly!" / "I'd be happy to."
+
+AVAILABLE PROVIDERS (the 5 named tools above are wrapped for ergonomics; for anything else, call orth_call with the slug + path):
+
+  GTM core
+  • apollo            people + company search (210M contacts, 30M companies)
+  • contactout        verified emails + phones by linkedin url
+  • predictleads      financing events, job openings, news per company
+  • peopledatalabs    deep person enrichment (alt to contactout)
+  • coresignal        employee data + company intelligence
+  • crustdata         private company financials + benchmarks
+
+  Email + outreach
+  • agentmail         programmatic inboxes (drafts + sends)
+  • hunter            email finder + verifier by domain
+  • tomba             email finder + verifier (alt to hunter)
+
+  Web + search
+  • tavily            keyword web search (already wired as web_search)
+  • exa               semantic web search
+  • linkup            realtime web search w/ synthesis
+  • serper            google SERP results
+  • perplexity        LLM-summarized web answers
+  • andi              answer engine
+
+  Scraping
+  • scrapegraphai     ai-driven structured scrape
+  • olostep           cheap general scrape
+  • captaindata       scraping orchestrator
+
+  Investors + funding
+  • aviato            investor + startup data
+  • fundable          funding round signals
+  • fiber             venture data
+
+  Identity + verification
+  • didit             identity verification
+  • nyne              person enrichment + interests
+  • happenstance      relationship intelligence
+
+  Plus: company-enrich, context-dev, edges, influencers-club, notte, ocean-io, openfunnel, openmart, precip, riveter, scrape-creators, seltz, sixtyfour, tako, voygr, baseten, and others. Use orth_discover to find any not listed here.`;
 
 /* ------------------------------ event helpers ----------------------------- */
 

@@ -93,6 +93,27 @@ function CostMeter({ cents }: { cents: number }) {
   );
 }
 
+function CompactionsMeter({ count }: { count: number }) {
+  const fired = count > 0;
+  return (
+    <div
+      className="hidden md:flex flex-col items-end gap-0.5 text-[10px] text-ink-muted"
+      title={
+        fired
+          ? `Sliding window has compacted ${count} time${count === 1 ? "" : "s"} this conversation. A naive chatbot would have crashed by now.`
+          : "No compaction needed yet. Keep chatting — once you exceed the budget, history compacts automatically."
+      }
+    >
+      <span className="font-mono uppercase tracking-[0.14em]">compacted</span>
+      <span
+        className={`font-mono tabular-nums ${fired ? "text-accent" : "text-ink-dim"}`}
+      >
+        {count}
+      </span>
+    </div>
+  );
+}
+
 /* ----------------------------- derive header stats ----------------------------- */
 
 function deriveStats(conversation: Conversation | null): {
@@ -100,14 +121,16 @@ function deriveStats(conversation: Conversation | null): {
   naiveTokens: number;
   modelMax: number;
   totalCostCents: number;
+  compactionCount: number;
 } {
   if (!conversation) {
-    return { actualTokens: 0, naiveTokens: 0, modelMax: 128_000, totalCostCents: 0 };
+    return { actualTokens: 0, naiveTokens: 0, modelMax: 128_000, totalCostCents: 0, compactionCount: 0 };
   }
   let totalCostCents = 0;
   let latestActual = 0;
   let latestNaive = 0;
   let modelMax = 128_000;
+  let compactionCount = 0;
   for (const m of conversation.messages) {
     if (m.kind !== "ai") continue;
     const stats = (m.data as AIMessageData & { contextStats?: { actual: number; naive: number; modelMax: number } }).contextStats;
@@ -116,11 +139,12 @@ function deriveStats(conversation: Conversation | null): {
       latestNaive = stats.naive;
       modelMax = stats.modelMax || modelMax;
     }
+    compactionCount += (m.data.compactions ?? []).length;
     for (const tc of m.data.toolCalls ?? []) {
       totalCostCents += tc.priceCents;
     }
   }
-  return { actualTokens: latestActual, naiveTokens: latestNaive, modelMax, totalCostCents };
+  return { actualTokens: latestActual, naiveTokens: latestNaive, modelMax, totalCostCents, compactionCount };
 }
 
 /* ================================ main ================================ */
@@ -385,6 +409,7 @@ export function ChatArea({
 
         <div className="ml-auto flex items-center gap-5">
           <DualContextMeter actual={stats.actualTokens} naive={stats.naiveTokens} modelMax={stats.modelMax} />
+          <CompactionsMeter count={stats.compactionCount} />
           <CostMeter cents={stats.totalCostCents} />
         </div>
 
