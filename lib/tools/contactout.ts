@@ -7,6 +7,7 @@ interface EnrichArgs {
   company?: string;
   company_domain?: string;
   include_phone?: boolean;
+  verbose?: boolean;
 }
 
 const contactout: ToolModule = {
@@ -45,6 +46,12 @@ const contactout: ToolModule = {
             type: "boolean",
             default: false,
             description: "Whether to attempt phone-number enrichment (costs more).",
+          },
+          verbose: {
+            type: "boolean",
+            default: false,
+            description:
+              "Return the full ContactOut profile instead of the 8-field envelope. Use when the user asks about specifics not in the default fields (education, skills, social links, full work history). Trades context bloat for completeness.",
           },
         },
         additionalProperties: false,
@@ -123,8 +130,15 @@ const contactout: ToolModule = {
       role_history: (profile.work_experience as unknown[]) ?? (profile.experience as unknown[]) ?? [],
     };
 
+    // L1 default: 8-field envelope (~200 tokens).
+    // Verbose: full ContactOut profile (~1-3k tokens) with full work history,
+    // education, skills, social links, etc.
+    const llmPayload = args.verbose
+      ? { ...profile, _normalized: normalized, _verbose: true }
+      : normalized;
+
     return {
-      llmContent: JSON.stringify(normalized),
+      llmContent: JSON.stringify(llmPayload),
       cardPayload: normalized,
       priceCents: result.priceCents,
       calls,

@@ -124,6 +124,18 @@ A `COMPACTED · N` counter aggregates across the conversation. Nothing is a vani
 
 **Why this answer fits the brief.** "API responses" → L1 handles it at source. "Conversation history" → L2 handles it at the budget boundary. Tool-catalog bloat (the implicit third) → L0 prevents it entirely. L3 makes all three observable. Each line of the rubric maps to a specific architectural layer.
 
+#### Output quality (the L1 trade-off)
+
+L1 is field-projection, not arbitrary truncation. Apollo's ~200-field person blob gets cut to 7 high-signal fields (`name, title, company, location, email, phone, linkedin, enriched`); we drop internal ids, audit timestamps, org-hierarchy nesting, and other noise the LLM rarely reasons about. PredictLeads keeps the top 3 most-recent events per kind. ContactOut keeps an 8-field envelope.
+
+Honest concern: a query that depends on a dropped field (employment history, skills, education, social handles, the body of a news article) would silently produce a thinner answer. Three things mitigate it:
+
+1. **Verbose escape valve on every dedicated tool.** Apollo / ContactOut / PredictLeads each accept `verbose: true`. When set, the tool passes the full raw record per result instead of the projection. The system prompt tells the agent to flip it on a retry when its first answer feels thin — *not* preemptively, because verbose blows context up by 10×. The L2 sliding window absorbs that bloat if it happens. So the agent trades context for completeness *per call, on demand*.
+2. **`orth_call` as the final escape.** If even verbose isn't enough, the agent can call `orth_call(api, path, body)` directly against any of the 55 providers and read the raw response (capped at 4k chars). No field is permanently inaccessible — just deferred.
+3. **The cards in the UI carry the full data.** `cardPayload` (what the user sees) isn't projected. The LLM works off the summary, the human reads the full profile. So even if the model misses something, it's still on screen.
+
+What's still missing (in *what I'd do with more time*): an eval harness that replays canned prompts against a frozen model + tool snapshot and gates merges on response-quality regressions. Without that, "verbose retries fix it" is a claim, not a measurement. The hook is there; the offline scoring loop isn't.
+
 ### Handling concurrent users on the same APIs (brief Q4)
 
 The brief asks "how would you handle multiple users hitting the same APIs concurrently?" The key word is **same**.

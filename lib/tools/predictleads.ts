@@ -6,6 +6,7 @@ interface SignalsArgs {
   domain?: string;
   kinds?: SignalKind[];
   limit?: number;
+  verbose?: boolean;
 }
 
 const PATH_BY_KIND: Record<SignalKind, string> = {
@@ -42,6 +43,12 @@ const company_signals: ToolModule = {
             maximum: 25,
             default: 5,
             description: "Max items per signal type (1-25).",
+          },
+          verbose: {
+            type: "boolean",
+            default: false,
+            description:
+              "Return full event objects instead of the top-3-per-kind summary. Use when the user asks for detail like 'list ALL recent jobs', deal participants, news bodies. Trades context bloat for completeness.",
           },
         },
         required: ["domain"],
@@ -104,14 +111,20 @@ const company_signals: ToolModule = {
         jobs: normalized.jobs.length,
         news: normalized.news.length,
       },
-      // L1 of our context strategy: pre-summarize tool responses at the source.
-      // Top 3 per kind keeps LLM payload ~500 tokens instead of the raw 5-10k.
-      // Full data still goes to the UI card.
-      sample: {
-        financing: normalized.financing.slice(0, 3),
-        jobs: normalized.jobs.slice(0, 3),
-        news: normalized.news.slice(0, 3),
-      },
+      // L1 default: top 3 per kind, summarized (~500 tokens).
+      // Verbose: full event arrays with all fields (~3-5k tokens).
+      sample: args.verbose
+        ? {
+            financing: normalized.financing,
+            jobs: normalized.jobs,
+            news: normalized.news,
+          }
+        : {
+            financing: normalized.financing.slice(0, 3),
+            jobs: normalized.jobs.slice(0, 3),
+            news: normalized.news.slice(0, 3),
+          },
+      verbose: !!args.verbose,
       errors: errors.length ? errors : undefined,
     });
 

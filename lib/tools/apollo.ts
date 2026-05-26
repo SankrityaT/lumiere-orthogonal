@@ -8,6 +8,7 @@ interface ApolloSearchArgs {
   person_locations?: string[];
   max_results?: number;
   enrich_top?: number;
+  verbose?: boolean;
 }
 
 interface ApolloPerson {
@@ -90,6 +91,12 @@ const apollo: ToolModule = {
             default: 0,
             description:
               "How many top results to enrich with email + phone via Apollo people/match. Each enrichment is a separate billed call — keep low (0-3).",
+          },
+          verbose: {
+            type: "boolean",
+            default: false,
+            description:
+              "Return full Apollo records instead of the curated 7-field projection. Use when the user asks about specifics not in the default fields (employment history, education, skills, github_url, departments, seniority signals). Trades context bloat for completeness — the sliding-window compaction will absorb it.",
           },
         },
         additionalProperties: false,
@@ -195,18 +202,25 @@ const apollo: ToolModule = {
 
     const totalCost = calls.reduce((acc, c) => acc + c.result.priceCents, 0);
 
+    // L1 default: 7 curated fields per person (~150 tokens each).
+    // Verbose: pass the raw Apollo record per person (~500-2000 tokens each)
+    // so the agent has access to employment_history, education, skills, etc.
+    // The verbose path bloats context fast but L2 sliding-window will absorb it.
     const llmContent = JSON.stringify({
       total_found: rawPeople.length,
       returned: normalized.length,
       enriched_count: enrichN,
-      people: normalized.map((p) => ({
-        name: p.name,
-        title: p.title,
-        company: p.company,
-        location: p.location,
-        email: p.email,
-        phone: p.phone,
-      })),
+      verbose: !!args.verbose,
+      people: args.verbose
+        ? limited.map((p, idx) => ({ ...p, ...(enriched[idx] ?? {}), _idx: idx, _enriched: idx < enrichN }))
+        : normalized.map((p) => ({
+            name: p.name,
+            title: p.title,
+            company: p.company,
+            location: p.location,
+            email: p.email,
+            phone: p.phone,
+          })),
     });
 
     return {
