@@ -329,16 +329,40 @@ function SignalColumn({
         <ul className="space-y-1.5">
           {items.slice(0, 4).map((item, i) => {
             const attrs = (item.attributes as Record<string, unknown>) ?? item;
-            const title = (attrs.title as string) ?? (attrs.job_title as string) ?? (attrs.headline as string) ?? "—";
+            // PredictLeads has 3 distinct response shapes per kind:
+            // - jobs: title / job_title / categories
+            // - financing: amount + category + funding_type (no title field)
+            // - news: news_title / article_title / description
+            const fmtCategory = (s: string) =>
+              s
+                .split("_")
+                .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+                .join(" ");
+            let title: string;
+            if (kind === "financing") {
+              const cat = (attrs.category as string) ?? (attrs.funding_type as string);
+              title = cat ? fmtCategory(cat) : "Funding event";
+            } else if (kind === "news") {
+              title =
+                (attrs.news_title as string) ??
+                (attrs.article_title as string) ??
+                (attrs.title as string) ??
+                (attrs.headline as string) ??
+                (attrs.description as string) ??
+                "News item";
+            } else {
+              title = (attrs.title as string) ?? (attrs.job_title as string) ?? "—";
+            }
             const date =
               (attrs.found_at as string) ??
               (attrs.first_seen_at as string) ??
               (attrs.published_at as string) ??
               "";
             const amount = kind === "financing" ? (attrs.amount as string) ?? (attrs.amount_normalized as string) : null;
-            // PredictLeads varies: jobs have url/landing_page_url, financing
-            // has source_url/url, news has url. Try them all.
+            // PredictLeads varies: jobs have url/landing_page_url,
+            // financing has news_url/source_url, news has news_url/url.
             const href =
+              (attrs.news_url as string) ??
               (attrs.url as string) ??
               (attrs.source_url as string) ??
               (attrs.landing_page_url as string) ??
