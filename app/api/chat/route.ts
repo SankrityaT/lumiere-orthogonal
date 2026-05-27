@@ -169,6 +169,13 @@ export async function POST(req: NextRequest) {
           saveDraft({ ...payload, conversationId, userId: user.uid }),
       };
 
+      // Cumulative OpenAI token usage across all iters of the agentic loop.
+      // cached_tokens = how many of our prompt's input tokens hit OpenAI's
+      // automatic prompt-prefix cache (50% discount on those tokens).
+      let turnCachedPromptTokens = 0;
+      let turnPromptTokens = 0;
+      let turnCompletionTokens = 0;
+
       // Track tool invocations within this turn to short-circuit duplicates.
       // Key = name + sorted-args-hash. If the model fires the exact same call
       // twice (e.g. "retry verbose" loops, redundant enrichment), we skip the
@@ -216,7 +223,12 @@ export async function POST(req: NextRequest) {
 
           send({ type: "state", value: iter === 0 ? "thinking" : "synthesizing" });
 
-          // (d) Call OpenAI with streaming + tools
+          // (d) Call OpenAI with streaming + tools.
+          // include_usage:true gives us the usage object on the final chunk,
+          // which contains prompt_tokens_details.cached_tokens — OpenAI's
+          // automatic prompt-prefix cache hit count. Our prompt is structured
+          // static-first (system + TOOL_DEFS, both stable) → dynamic-last
+          // (user msg), which is the cache-optimal shape per OpenAI's docs.
           const completion = await openai().chat.completions.create({
             model: MODEL,
             messages: budget.messages.map(stripInternalFields) as unknown as ChatCompletionMessageParam[],
@@ -224,6 +236,7 @@ export async function POST(req: NextRequest) {
             tool_choice: "auto",
             parallel_tool_calls: true,
             stream: true,
+            stream_options: { include_usage: true },
           });
 
           // (e) Accumulate streamed deltas
@@ -238,6 +251,25 @@ export async function POST(req: NextRequest) {
           let finishReason: string | null = null;
 
           for await (const chunk of completion) {
+            // Final usage chunk: no choices, but has chunk.usage with the
+            // prompt_tokens_details.cached_tokens we care about.
+            if (chunk.usage) {
+              const cached = chunk.usage.prompt_tokens_details?.cached_tokens ?? 0;
+              const promptTokens = chunk.usage.prompt_tokens ?? 0;
+              const completionTokens = chunk.usage.completion_tokens ?? 0;
+              if (cached > 0) {
+                send({
+                  type: "openai_cache_hit",
+                  cached_tokens: cached,
+                  prompt_tokens: promptTokens,
+                  completion_tokens: completionTokens,
+                });
+              }
+              turnCachedPromptTokens += cached;
+              turnPromptTokens += promptTokens;
+              turnCompletionTokens += completionTokens;
+              continue;
+            }
             const choice = chunk.choices[0];
             if (!choice) continue;
             const delta = choice.delta;
@@ -416,7 +448,16 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        send({ type: "done", price_cents: totalCostCents });
+        send({
+          type: "done",
+          price_cents: totalCostCents,
+          openai_usage: {
+            prompt_tokens: turnPromptTokens,
+            cached_prompt_tokens: turnCachedPromptTokens,
+            completion_tokens: turnCompletionTokens,
+            cache_hit_pct: turnPromptTokens > 0 ? Math.round((turnCachedPromptTokens / turnPromptTokens) * 1000) / 10 : 0,
+          },
+        });
         controller.close();
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

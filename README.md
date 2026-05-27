@@ -140,10 +140,11 @@ What's still missing (in *what I'd do with more time*): an eval harness that rep
 
 The brief asks "how would you handle multiple users hitting the same APIs concurrently?" The key word is **same**.
 
-Two layers, both keyed by `sha256(provider + path + sortedQuery)` so identical payloads dedupe regardless of who's asking:
+**Three layers of caching, each pulled from the standard playbook** (OpenAI prompt-cache docs, Redis cache-optimization guide, Anthropic semantic-cache patterns):
 
-1. **In-flight coalescing (in-process, 30s).** If two requests for the same key arrive within 30s, the second `await`s the first's promise. One upstream call, two responses. Directly answers the "same time, same query, different users" case.
-2. **Redis response cache (tiered TTL).**
+1. **OpenAI prompt-prefix cache (server-side, automatic).** Our system prompt + `TOOL_DEFS` (~2k tokens) are byte-stable across every request — exactly what OpenAI's automatic prefix cache wants. Cached tokens get a 50% input discount and ~80% latency reduction on the cached portion. We read `usage.prompt_tokens_details.cached_tokens` off the final stream chunk and surface it in the `done` event. Required structure (per OpenAI's [Prompt Caching guide](https://developers.openai.com/api/docs/guides/prompt-caching)): static-first → dynamic-last, no per-request data in the system prompt. We comply.
+2. **In-flight coalescing (in-process, 30s).** Two requests for the same `sha256(provider + path + sortedQuery)` key within 30s share a single promise. Directly answers "two users ask the same thing at the same time."
+3. **Redis response cache (tiered TTL).** Persisted across instances.
    - **24h** for enrichments (Apollo `people/match`, ContactOut enrich) — stable data
    - **5min** for news / financing / web search — high churn
    - **1h** default
