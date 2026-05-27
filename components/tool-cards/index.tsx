@@ -336,13 +336,41 @@ function SignalColumn({
               (attrs.published_at as string) ??
               "";
             const amount = kind === "financing" ? (attrs.amount as string) ?? (attrs.amount_normalized as string) : null;
-            return (
-              <li key={i} className="text-[11.5px] text-ink-dim leading-snug">
-                <div className="line-clamp-2 text-ink">{title}</div>
+            // PredictLeads varies: jobs have url/landing_page_url, financing
+            // has source_url/url, news has url. Try them all.
+            const href =
+              (attrs.url as string) ??
+              (attrs.source_url as string) ??
+              (attrs.landing_page_url as string) ??
+              (attrs.application_url as string) ??
+              (attrs.link as string) ??
+              null;
+            const Inner = (
+              <>
+                <div className="line-clamp-2 text-ink group-hover/li:text-accent-strong transition-colors">
+                  {title}
+                </div>
                 <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-ink-muted">
                   {date && <span className="font-mono">{date.slice(0, 10)}</span>}
                   {amount && <span className="rounded bg-accent/10 px-1 text-accent-strong">{amount}</span>}
+                  {href && <span className="ml-auto text-ink-muted/70">↗</span>}
                 </div>
+              </>
+            );
+            return (
+              <li key={i} className="group/li text-[11.5px] text-ink-dim leading-snug">
+                {href ? (
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="block rounded px-1 -mx-1 hover:bg-bg/50 transition-colors"
+                  >
+                    {Inner}
+                  </a>
+                ) : (
+                  <div>{Inner}</div>
+                )}
               </li>
             );
           })}
