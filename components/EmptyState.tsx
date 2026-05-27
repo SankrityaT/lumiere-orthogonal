@@ -58,8 +58,8 @@ export function EmptyState({ onSuggest }: EmptyStateProps) {
             <span> today?</span>
           </h1>
         </div>
-        <p className="mt-4 max-w-[480px] text-[14px] leading-relaxed text-ink-dim">
-          A chat with access to Orthogonal&apos;s API catalog. Ask about people, companies, funding signals, or the web — the agent picks the right tool and shows real results inline.
+        <p className="mt-4 max-w-[520px] text-[14px] leading-relaxed text-ink-dim">
+          <span className="text-ink">The only GTM tool you need.</span> Prospecting, enrichment, company signals, and outreach across 55+ APIs, all in one chat. Ask in natural language and the agent picks the right tool, then shows real results inline.
         </p>
       </motion.div>
 

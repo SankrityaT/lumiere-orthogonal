@@ -150,6 +150,18 @@ Honest concern: a query that depends on a dropped field (employment history, ski
 
 What's still missing (in *what I'd do with more time*): an eval harness that replays canned prompts against a frozen model + tool snapshot and gates merges on response-quality regressions. Without that, "verbose retries fix it" is a claim, not a measurement. The hook is there; the offline scoring loop isn't.
 
+### Handling conversation persistence (brief Q2)
+
+The brief asks "conversations should persist. If a user leaves and comes back, their history should still be there." Three storage tiers, each pulled at the right moment:
+
+1. **Signed cookie identity (`lib/cookies.ts`).** Every request resolves to a stable `orth_uid` via an HMAC-SHA256 signed httpOnly cookie. No login wall, but the same browser comes back to the same conversations across reloads and tabs. Production swap to Clerk is one config change.
+2. **Neon Postgres write path (`lib/db/`).** When `/api/chat` finishes streaming, the route calls `persistTurn()` wrapped in `waitUntil` from `@vercel/functions`. The user message, the assistant message, and one row per `tool_call` (with `provider`, `path`, `args`, `response`, `price_cents`, `latency_ms`, `cached_from_id`) all land in four indexed tables — see the Schema block. `waitUntil` matters: a naive fire-and-forget after `stream.close()` gets killed by the Vercel function runtime before the writes flush, silently dropping history. `waitUntil` extends the function's lifecycle past the response.
+3. **Read path on page load (`/api/conversations`, `/api/conversations/[id]`).** The sidebar lists conversations by `(user_id, updated_at)` — index-covered. Clicking one fetches the full thread including reconstructed tool-result cards from `tool_calls.response` so cards re-render identically to the original turn. No client cache that can stale: the DB is the source of truth on every load.
+
+**Graceful degradation.** If `DATABASE_URL` is unset (someone clones the repo with just OpenAI + Orthogonal keys), conversations fall back to `localStorage` so the chat still works end-to-end. The DB code paths are `db ?? null` guarded throughout. Production wiring is one env flip.
+
+**Why Postgres, not a chat-specific store like Convex or Supabase Realtime.** Two reasons. (1) The `tool_calls` table is also the analytics ledger — `GROUP BY provider, date(created_at)` answers "what's our hit rate and cost per provider this week" in one query. A KV store can't do that without a parallel data warehouse. (2) Drizzle + Neon HTTP transport gives us serverless-native cold reads at ~50ms with no connection pool to manage. Same primitives serve the chat UI and a future analytics dashboard.
+
 ### Handling concurrent users on the same APIs (brief Q4)
 
 The brief asks "how would you handle multiple users hitting the same APIs concurrently?" The key word is **same**.

@@ -198,6 +198,18 @@ body::before {
   animation: shimmer 2.5s linear infinite;
 }
 
+/* Hero headline gets a tiny theme-aware text-shadow so it stays legible
+   on top of the dimmed hero image. Dark mode: subtle dark halo. Light mode:
+   subtle bright halo so the cream/page tone bleeds around the dark glyphs
+   instead of stamping a dark shadow into the cream paint. */
+.hero-headline {
+  text-shadow: 0 2px 20px rgba(255, 255, 255, 0.55);
+}
+:root.dark .hero-headline,
+.dark .hero-headline {
+  text-shadow: 0 2px 24px rgba(0, 0, 0, 0.55);
+}
+
 /* Stronger shimmer for the thinking/searching/writing state word.
    Tighter highlight band + accent color in the bright stripe + faster cycle
    so the sweep is unambiguous on a short word. */
