@@ -198,6 +198,30 @@ body::before {
   animation: shimmer 2.5s linear infinite;
 }
 
+/* Stronger shimmer for the thinking/searching/writing state word.
+   Tighter highlight band + accent color in the bright stripe + faster cycle
+   so the sweep is unambiguous on a short word. */
+.thinking-word {
+  background: linear-gradient(
+    90deg,
+    rgb(var(--text-muted)) 0%,
+    rgb(var(--text-muted)) 42%,
+    rgb(var(--accent-strong)) 50%,
+    rgb(var(--text-muted)) 58%,
+    rgb(var(--text-muted)) 100%
+  );
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: thinking-shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes thinking-shimmer {
+  0%   { background-position: 150% 0; }
+  100% { background-position: -150% 0; }
+}
+
 /* Display serif */
 .serif-display {
   font-family: var(--font-display);

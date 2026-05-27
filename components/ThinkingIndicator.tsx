@@ -60,7 +60,7 @@ export function ThinkingIndicator({ state }: { state: ThinkingState }) {
         </AnimatePresence>
       </div>
 
-      {/* State text with shimmer */}
+      {/* State text — the word itself shimmers */}
       <AnimatePresence mode="wait">
         <motion.div
           key={label}
@@ -70,23 +70,12 @@ export function ThinkingIndicator({ state }: { state: ThinkingState }) {
           transition={{ duration: 0.22 }}
           className="flex items-baseline gap-2.5"
         >
-          <span className="shimmer-text serif-italic text-[15px]">{label}</span>
+          <span className="thinking-word serif-italic text-[15px]">{label}</span>
           {state.kind === "searching" && state.query && (
             <span className="text-[11.5px] text-ink-muted truncate max-w-[260px]">"{state.query}"</span>
           )}
         </motion.div>
       </AnimatePresence>
-
-      {/* Trailing breathing dots */}
-      <div className="flex items-center gap-1 pl-1">
-        {[0, 1, 2].map((i) => (
-          <span
-            key={i}
-            className="h-1 w-1 rounded-full bg-accent/70 animate-breath"
-            style={{ animationDelay: `${i * 0.2}s` }}
-          />
-        ))}
-      </div>
     </div>
   );
 }
