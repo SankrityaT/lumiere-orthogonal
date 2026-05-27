@@ -169,6 +169,22 @@ export async function POST(req: NextRequest) {
           saveDraft({ ...payload, conversationId, userId: user.uid }),
       };
 
+      // Track tool invocations within this turn to short-circuit duplicates.
+      // Key = name + sorted-args-hash. If the model fires the exact same call
+      // twice (e.g. "retry verbose" loops, redundant enrichment), we skip the
+      // upstream + return a one-liner so the agent stops trying.
+      const calledThisTurn = new Set<string>();
+      function fingerprint(name: string, args: Record<string, unknown>): string {
+        try {
+          const keys = Object.keys(args).sort();
+          const norm: Record<string, unknown> = {};
+          for (const k of keys) norm[k] = args[k];
+          return `${name}::${JSON.stringify(norm)}`;
+        } catch {
+          return `${name}::?`;
+        }
+      }
+
       try {
         for (let iter = 0; iter < MAX_ITER; iter++) {
           // (a) Budget the messages (real tokenization, dual track)
@@ -287,6 +303,25 @@ export async function POST(req: NextRequest) {
                   llmContent: JSON.stringify({ error: `Unknown tool ${tc.function.name}` }),
                 };
               }
+
+              // Dedup: same tool + same args fired earlier this turn? short-circuit.
+              const fp = fingerprint(tc.function.name, parsedArgs);
+              if (calledThisTurn.has(fp)) {
+                send({
+                  type: "tool_call_error",
+                  tool_call_id: tc.id,
+                  tool_name: tc.function.name,
+                  error: "duplicate call in this turn — use the prior result.",
+                });
+                return {
+                  tc,
+                  llmContent: JSON.stringify({
+                    error:
+                      "You already called this tool with identical arguments in this turn. Use the prior result; do not re-call.",
+                  }),
+                };
+              }
+              calledThisTurn.add(fp);
 
               // Emit tool_call_start so UI can render a "running" card
               send({
