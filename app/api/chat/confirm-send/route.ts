@@ -15,6 +15,10 @@ interface ConfirmBody {
   draft_id?: string;
   to?: string;
   confirmed?: boolean;
+  // Optional edits — if present, override the stored draft. The agent never
+  // touches this path; only the user, via the UI's editable fields.
+  subject?: string;
+  body?: string;
 }
 
 /* ------------------------- recipient allowlist ------------------------- */
@@ -127,9 +131,12 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 5. Fire AgentMail with the USER-PROVIDED `to` (never the agent's pick)
-  const subject = `[DEMO] ${draft.subject}`;
-  const text = `${draft.body}${DEMO_FOOTER}`;
+  // 5. Fire AgentMail with the USER-PROVIDED `to` (never the agent's pick).
+  // Subject + body may be user-edited overrides; fall back to the stored draft.
+  const effectiveSubject = body.subject?.trim() || draft.subject;
+  const effectiveBody = body.body?.trim() || draft.body;
+  const subject = `[DEMO] ${effectiveSubject}`;
+  const text = `${effectiveBody}${DEMO_FOOTER}`;
   const send = await orth().run<{ message_id?: string; thread_id?: string }>({
     api: "agentmail",
     path: `/v0/inboxes/${encodeURIComponent(inboxId)}/messages/send`,

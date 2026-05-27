@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Search, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { Logo } from "./Logo";
 import { ThemeToggle } from "./ThemeToggle";
 import { motion, AnimatePresence } from "framer-motion";
@@ -32,24 +32,15 @@ export function Sidebar({
       </div>
 
       {/* New chat */}
-      <div className="px-3 pb-2">
+      <div className="px-3 pb-3">
         <button
           onClick={onNew}
           className="group relative flex w-full items-center gap-2.5 rounded-lg border border-border bg-elevated/40 px-3 py-2 text-[13px] text-ink transition-all hover:border-accent/30 hover:bg-elevated"
         >
           <Plus size={13} strokeWidth={2} className="text-accent transition-transform group-hover:rotate-90 duration-300" />
           <span>New conversation</span>
-          <span className="ml-auto rounded border border-border/60 px-1.5 py-0.5 text-[10px] font-mono text-ink-muted">⌘N</span>
+          <span className="ml-auto rounded border border-border/60 px-1.5 py-0.5 text-[10px] font-mono text-ink-muted">⌘K</span>
         </button>
-      </div>
-
-      {/* Search (decorative for now) */}
-      <div className="px-3 pb-3">
-        <div className="flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-[12.5px] text-ink-muted transition-colors hover:bg-elevated/40">
-          <Search size={13} strokeWidth={1.8} />
-          <span>Search</span>
-          <span className="ml-auto font-mono text-[10px]">⌘K</span>
-        </div>
       </div>
 
       {/* Conversation list */}

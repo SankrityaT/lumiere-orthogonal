@@ -54,14 +54,27 @@ const orth_discover: ToolModule = {
         error: r.error,
       };
     }
-    // /v1/search returns { success: true, apis: [...] } — keep top 6 for both LLM + UI
-    const data = r.data as { apis?: Array<{ slug: string; name: string; description?: string; endpoints?: unknown[] }> };
-    const apis = (data.apis ?? []).slice(0, 6).map((a) => ({
-      slug: a.slug,
-      name: a.name,
-      description: a.description?.slice(0, 200),
-      endpoint_count: a.endpoints?.length ?? 0,
-    }));
+    // /v1/search returns { success: true, results: [{ slug, name, endpoints: [{ path, method, ... }] }] }
+    // Keep top 6 for both LLM + UI. There's no api-level description field, so
+    // synthesize one from the first 2 endpoint paths.
+    type SearchEndpoint = { path?: string; method?: string; description?: string };
+    type SearchHit = { slug: string; name: string; endpoints?: SearchEndpoint[] };
+    const data = r.data as { results?: SearchHit[]; apis?: SearchHit[] };
+    const hits = data.results ?? data.apis ?? [];
+    const apis = hits.slice(0, 6).map((a) => {
+      const eps = a.endpoints ?? [];
+      const preview = eps
+        .slice(0, 2)
+        .map((e) => `${(e.method ?? "GET").toUpperCase()} ${e.path ?? ""}`.trim())
+        .filter(Boolean)
+        .join(" · ");
+      return {
+        slug: a.slug,
+        name: a.name,
+        description: preview || undefined,
+        endpoint_count: eps.length,
+      };
+    });
 
     const llmContent = JSON.stringify({
       query: args.query,

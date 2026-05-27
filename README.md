@@ -5,7 +5,15 @@
 
 A chat app where the assistant calls Orthogonal's unified API catalog (55+ providers behind one key) and renders real results inline.
 
-**Demo arc:** `Find 3 senior engineers at Stripe → enrich their contact info → check Stripe's recent funding signals → search the web for Stripe news → draft an outreach email (you pick the recipient, the agent never does).`
+**Two demo prompts that exercise the architecture end-to-end:**
+
+1. **The GTM arc (uses the 5 dedicated tools + email):**
+   *"Find 3 senior platform engineers at Vercel, pull Vercel's recent funding and hiring signals, then draft a personalized outreach email to the top candidate anchored on something concrete from their background and a real Vercel signal."*
+   Hits `apollo_search_people` (with `organization_domains: ["vercel.com"]`) → `company_signals(vercel.com)` → `send_email` with the research baked into the body, not bracket placeholders.
+
+2. **The L0 catalog-discovery chain (proves the agent picks tools dynamically):**
+   *"What tech stack does linear.app run on? Use Orthogonal's catalog to find an API that can detect it."*
+   None of the 5 dedicated tools cover this, so the agent fires `orth_discover("tech stack detection")` → catalog returns tomba, predictleads, scrapegraphai → agent immediately fires `orth_call(tomba, /v1/technology, {url: linear.app})` in the same turn and synthesizes the answer ("GCP + Cloudflare, Algolia, Sanity, HTTP/3..."). No "want me to call one?" menu — the user gets the answer.
 
 ---
 
@@ -98,8 +106,12 @@ The brief asks "as you build and use your chat, you'll notice the context window
 
 Those are two distinct sources of bloat. Add the implicit third (the tool catalog itself — 55 tool defs in the system prompt would cost ~10k tokens before the user types anything) and you get **four layers**, each preventing a different source from ever entering the budget:
 
-**L0 — Lazy tool catalog via `/v1/search` (`lib/tools/orth_discover.ts`).**
-We register **7 OpenAI function defs** in the system prompt (the 5 dedicated tools + `orth_discover` + `orth_call`), not 55. Total tool-def cost: ~2k tokens. When the agent needs a provider not in the 5, it calls `orth_discover("verify email deliverability")` which wraps Orthogonal's `/v1/search`. That returns the top 6 semantic matches (~500 tokens) instead of preloading all 55 schemas. The catalog **never enters baseline context**. This is the cleverest layer because it solves the bloat by never creating it.
+**L0 — Lazy tool catalog via `/v1/search` (`lib/tools/orth_discover.ts` + `lib/tools/orth_call.ts`).**
+We register **7 OpenAI function defs** in the system prompt (the 5 dedicated tools + `orth_discover` + `orth_call`), not 55. Total tool-def cost: ~2k tokens. When the agent needs a provider not in the 5, it calls `orth_discover("verify email deliverability")` which wraps Orthogonal's `/v1/search` (POST `{prompt}`, returns top 6 semantic matches at ~500 tokens). The catalog **never enters baseline context**.
+
+**Auto-chain rule.** Discovery alone isn't the demo — the agent must *use* what it discovered. The system prompt mandates: when a request needs a capability outside the 5 dedicated tools, fire `orth_discover` and `orth_call` in the **same turn** with the best match. Never stop after discover to ask "want me to call one?" — that defeats the point; the user asked for an answer, not a menu. The discover card also exposes click-to-prefill on each row so the human can override.
+
+`orth_call` is defensively coded: if the model encodes query params into the path string (e.g. `/path?qs=1` instead of using the `query` field), the wrapper parses them out and merges into `query` before hitting `/v1/run` — the catalog validates paths exactly, so the unsplit form 404s. Belt-and-suspenders: the schema description tells the model the right shape too.
 
 **L1 — Tool-level response summarization (every `lib/tools/*.ts`).**
 Each tool extracts only what the LLM actually needs from raw Orthogonal responses:
@@ -133,6 +145,8 @@ Honest concern: a query that depends on a dropped field (employment history, ski
 1. **Verbose escape valve on every dedicated tool.** Apollo / ContactOut / PredictLeads each accept `verbose: true`. When set, the tool passes the full raw record per result instead of the projection. The system prompt tells the agent to flip it on a retry when its first answer feels thin — *not* preemptively, because verbose blows context up by 10×. The L2 sliding window absorbs that bloat if it happens. So the agent trades context for completeness *per call, on demand*.
 2. **`orth_call` as the final escape.** If even verbose isn't enough, the agent can call `orth_call(api, path, body)` directly against any of the 55 providers and read the raw response (capped at 4k chars). No field is permanently inaccessible — just deferred.
 3. **The cards in the UI carry the full data.** `cardPayload` (what the user sees) isn't projected. The LLM works off the summary, the human reads the full profile. So even if the model misses something, it's still on screen.
+
+**Card ergonomics (provider quirks the UI compensates for).** Apollo's search response is intentionally redacted (`last_name_obfuscated`, no `linkedin_url`, no `photo_url`); even `/api/v1/people/match` returns `linkedin_url: None` for many records. The Apollo and Contact-enrich cards therefore make the person name **always clickable** — profile URL when Apollo returned one, otherwise a LinkedIn people-search for `name + company` so the user is one click away regardless. PredictLeads news events bury the article URL inside the JSON:API `included[]` array referenced by `relationships.most_relevant_source.data.id`; the `company_signals` tool resolves that join server-side and injects `source_url` + `article_title` into the event attributes so the card can render flat clickable links without the UI needing to know JSON:API. These are small but the difference between "demo that looks like data" and "demo that lets you actually do something."
 
 What's still missing (in *what I'd do with more time*): an eval harness that replays canned prompts against a frozen model + tool snapshot and gates merges on response-quality regressions. Without that, "verbose retries fix it" is a claim, not a measurement. The hook is there; the offline scoring loop isn't.
 

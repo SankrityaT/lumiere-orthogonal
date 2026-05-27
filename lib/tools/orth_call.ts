@@ -28,7 +28,7 @@ const orth_call: ToolModule = {
         type: "object",
         properties: {
           api: { type: "string", description: "Orthogonal provider slug (e.g. 'tomba', 'aviato')." },
-          path: { type: "string", description: "Upstream endpoint path with any params already interpolated." },
+          path: { type: "string", description: "Upstream endpoint path with any URL params already interpolated (e.g. /v3/companies/stripe.com/news_events). Do NOT append query strings here — the catalog validates the path exactly. Put query params in the `query` object instead." },
           query: {
             type: "object",
             description: "Query-string parameters for GET endpoints.",
@@ -63,16 +63,35 @@ const orth_call: ToolModule = {
       };
     }
 
+    // Defensive: the model sometimes encodes query params into the path
+    // string (e.g. "/v3/companies/x/foo?verbose=true") instead of using the
+    // query argument. Orthogonal's catalog validates the path EXACTLY against
+    // registered endpoints — a trailing "?qs" produces a 404 like
+    // "Endpoint ... not found in API <slug>". Split it apart here so the call
+    // still works regardless of which shape the model picked.
+    let path = args.path;
+    let query: Record<string, unknown> | undefined = args.query;
+    const qIdx = path.indexOf("?");
+    if (qIdx >= 0) {
+      const search = new URLSearchParams(path.slice(qIdx + 1));
+      path = path.slice(0, qIdx);
+      const merged: Record<string, unknown> = { ...(query ?? {}) };
+      for (const [k, v] of search.entries()) {
+        if (!(k in merged)) merged[k] = v;
+      }
+      query = merged;
+    }
+
     const calls: ToolCallTrace[] = [];
     const r = await ctx.call({
       api: args.api,
-      path: args.path,
-      query: args.query,
+      path,
+      query,
       body: args.body,
       method: args.method,
       cacheTier: "default",
     });
-    calls.push({ callId: r.callId, api: args.api, path: args.path, args: { query: args.query, body: args.body }, result: r });
+    calls.push({ callId: r.callId, api: args.api, path, args: { query, body: args.body }, result: r });
 
     if (!r.ok) {
       return {

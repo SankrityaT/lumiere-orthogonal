@@ -145,19 +145,34 @@ export function ApolloPeopleCard({ payload }: { payload: { people: ApolloPerson[
         ) : null}
       </div>
       <ul className="divide-y divide-border/60">
-        {payload.people.slice(0, 12).map((p, i) => (
+        {payload.people.slice(0, 12).map((p, i) => {
+          // Apollo's search response is redacted (no linkedin_url) and even
+          // enrichment returns None for many people. Make the name always
+          // clickable: profile URL when we have it, otherwise a LinkedIn
+          // people-search for "<name> <company>" so the user can still
+          // find them in one click.
+          const linkedinHref =
+            p.linkedin ||
+            `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(
+              `${p.name ?? ""} ${p.company ?? ""}`.trim(),
+            )}`;
+          return (
           <li key={i} className="flex items-start gap-3 py-2.5">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-elevated text-[11px] font-medium text-accent ring-1 ring-border">
               {(p.name ?? "?").slice(0, 2).toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-baseline gap-x-2 text-[13.5px] text-ink">
-                <span className="font-medium">{p.name}</span>
-                {p.linkedin && (
-                  <a href={p.linkedin} target="_blank" rel="noreferrer" className="text-accent/70 hover:text-accent">
-                    <Linkedin size={11} strokeWidth={1.8} className="inline" />
-                  </a>
-                )}
+                <a
+                  href={linkedinHref}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={p.linkedin ? "Open LinkedIn profile" : "Search LinkedIn for this person"}
+                  className="inline-flex items-baseline gap-1 font-medium text-ink hover:text-accent hover:underline decoration-accent/40 underline-offset-2"
+                >
+                  {p.name}
+                  <Linkedin size={11} strokeWidth={1.8} className="inline self-center text-accent/70" />
+                </a>
                 {p.enriched && (
                   <span className="rounded bg-accent/10 px-1 py-0.5 text-[9.5px] font-mono text-accent-strong">enriched</span>
                 )}
@@ -189,16 +204,20 @@ export function ApolloPeopleCard({ payload }: { payload: { people: ApolloPerson[
                     </a>
                   )}
                   {p.phone && (
-                    <span className="inline-flex items-center gap-1 rounded border border-border bg-elevated/40 px-1.5 py-0.5 text-[10.5px] font-mono text-ink-dim">
+                    <a
+                      href={`tel:${p.phone}`}
+                      className="inline-flex items-center gap-1 rounded border border-border bg-elevated/40 px-1.5 py-0.5 text-[10.5px] font-mono text-ink-dim hover:border-accent/40 hover:text-ink"
+                    >
                       <Phone size={9} strokeWidth={1.8} />
                       {p.phone}
-                    </span>
+                    </a>
                   )}
                 </div>
               )}
             </div>
           </li>
-        ))}
+          );
+        })}
       </ul>
     </div>
   );
@@ -221,6 +240,11 @@ interface ContactEnrichPayload {
 export function ContactEnrichCard({ payload }: { payload: ContactEnrichPayload }) {
   const emails = payload.emails ?? [];
   const phones = payload.phones ?? [];
+  const linkedinHref =
+    payload.linkedin ||
+    `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(
+      `${payload.name ?? ""} ${payload.company ?? ""}`.trim(),
+    )}`;
   return (
     <div className="flex items-start gap-3">
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-elevated text-[12.5px] font-medium text-accent ring-1 ring-border">
@@ -228,12 +252,16 @@ export function ContactEnrichCard({ payload }: { payload: ContactEnrichPayload }
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline gap-2">
-          <span className="text-[14px] font-medium text-ink">{payload.name ?? "Unknown"}</span>
-          {payload.linkedin && (
-            <a href={payload.linkedin} target="_blank" rel="noreferrer" className="text-accent/70 hover:text-accent">
-              <Linkedin size={12} strokeWidth={1.8} className="inline" />
-            </a>
-          )}
+          <a
+            href={linkedinHref}
+            target="_blank"
+            rel="noreferrer"
+            title={payload.linkedin ? "Open LinkedIn profile" : "Search LinkedIn for this person"}
+            className="inline-flex items-baseline gap-1 text-[14px] font-medium text-ink hover:text-accent hover:underline decoration-accent/40 underline-offset-2"
+          >
+            {payload.name ?? "Unknown"}
+            <Linkedin size={12} strokeWidth={1.8} className="inline self-center text-accent/70" />
+          </a>
         </div>
         <div className="mt-0.5 text-[12.5px] text-ink-dim">
           {payload.title}
@@ -260,12 +288,13 @@ export function ContactEnrichCard({ payload }: { payload: ContactEnrichPayload }
             </a>
           ))}
           {phones.map((p, i) => (
-            <span
+            <a
               key={`p-${i}`}
-              className="inline-flex items-center gap-1 rounded border border-border bg-elevated/40 px-2 py-0.5 text-[11px] font-mono text-ink-dim"
+              href={`tel:${p}`}
+              className="inline-flex items-center gap-1 rounded border border-border bg-elevated/40 px-2 py-0.5 text-[11px] font-mono text-ink-dim hover:border-accent/40 hover:text-ink"
             >
               <Phone size={10} strokeWidth={1.8} /> {p}
-            </span>
+            </a>
           ))}
         </div>
       </div>
@@ -456,6 +485,8 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function EmailDraftCard({ payload }: { payload: DraftPayload }) {
   const [recipient, setRecipient] = useState("");
+  const [subject, setSubject] = useState(payload.subject);
+  const [bodyText, setBodyText] = useState(payload.body);
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "failed">("idle");
   const [error, setError] = useState<string | null>(null);
   const [sentMeta, setSentMeta] = useState<{ messageId?: string; used?: number; cap?: number; sentTo?: string } | null>(
@@ -463,7 +494,7 @@ export function EmailDraftCard({ payload }: { payload: DraftPayload }) {
   );
 
   const recipientValid = EMAIL_RE.test(recipient.trim());
-  const canSend = recipientValid && status === "idle";
+  const canSend = recipientValid && subject.trim().length > 0 && bodyText.trim().length > 0 && status === "idle";
 
   const send = async () => {
     if (!recipientValid) return;
@@ -474,7 +505,13 @@ export function EmailDraftCard({ payload }: { payload: DraftPayload }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ draft_id: payload.draft_id, to: recipient.trim(), confirmed: true }),
+        body: JSON.stringify({
+          draft_id: payload.draft_id,
+          to: recipient.trim(),
+          confirmed: true,
+          subject: subject.trim(),
+          body: bodyText.trim(),
+        }),
       });
       const j = await res.json();
       if (!res.ok || !j.ok) {
@@ -551,12 +588,27 @@ export function EmailDraftCard({ payload }: { payload: DraftPayload }) {
         )}
       </div>
 
-      <div className="space-y-1">
-        <Row label="subject" value={payload.subject} />
+      {/* Editable subject */}
+      <div className="mt-1 flex items-baseline gap-2">
+        <span className="w-14 shrink-0 font-mono text-[10.5px] uppercase tracking-[0.1em] text-ink-muted">subject</span>
+        <input
+          type="text"
+          value={subject}
+          onChange={(e) => setSubject(e.target.value)}
+          disabled={status === "sending" || status === "sent"}
+          className="no-default-focus flex-1 rounded border border-border bg-elevated/30 px-2 py-1 text-[12.5px] text-ink focus:border-accent/50"
+          spellCheck={false}
+        />
       </div>
-      <div className="mt-2 rounded-lg border border-border/60 bg-elevated/30 p-2.5 text-[12px] leading-relaxed text-ink whitespace-pre-wrap">
-        {payload.body}
-      </div>
+      {/* Editable body */}
+      <textarea
+        value={bodyText}
+        onChange={(e) => setBodyText(e.target.value)}
+        disabled={status === "sending" || status === "sent"}
+        rows={Math.min(14, Math.max(6, bodyText.split("\n").length + 1))}
+        className="no-default-focus mt-2 w-full resize-y rounded-lg border border-border/60 bg-elevated/30 p-2.5 text-[12px] leading-relaxed text-ink focus:border-accent/50"
+        spellCheck={true}
+      />
       {payload.footer_note && (
         <div className="mt-1.5 text-[10.5px] italic text-ink-muted">{payload.footer_note}</div>
       )}
@@ -611,29 +663,58 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
 /* ============================ Discover card ============================ */
 
 interface DiscoverPayload {
-  query: string;
-  matches: Array<{ slug: string; name: string; description?: string; endpoint_count: number }>;
+  query?: string;
+  matches?: Array<{ slug: string; name: string; description?: string; endpoint_count: number }>;
+  error?: string;
 }
 
 export function DiscoverCard({ payload }: { payload: DiscoverPayload }) {
+  const matches = payload.matches ?? [];
+  if (payload.error) {
+    return (
+      <div className="text-[12px] text-ink-dim">
+        <span className="font-mono text-[10.5px] uppercase tracking-[0.1em] text-rose-400">discover failed</span>
+        <div className="mt-1 text-ink">{payload.error}</div>
+      </div>
+    );
+  }
   return (
     <div>
       <div className="mb-2 flex items-center gap-2 text-[12px] text-ink-dim">
         <Sparkles size={12} strokeWidth={1.8} className="text-accent" />
-        <span className="italic">&ldquo;{payload.query}&rdquo;</span>
+        <span className="italic">&ldquo;{payload.query ?? ""}&rdquo;</span>
       </div>
-      <ul className="space-y-1.5">
-        {payload.matches.map((m) => (
-          <li key={m.slug} className="rounded border border-border/60 bg-elevated/30 p-2">
-            <div className="flex items-baseline gap-2">
-              <span className="text-[13px] font-medium text-ink">{m.name}</span>
-              <span className="font-mono text-[10.5px] text-accent">{m.slug}</span>
-              <span className="ml-auto font-mono text-[10px] text-ink-muted">{m.endpoint_count} eps</span>
-            </div>
-            {m.description && <div className="mt-0.5 text-[11.5px] text-ink-dim leading-snug">{m.description}</div>}
-          </li>
-        ))}
-      </ul>
+      {matches.length === 0 ? (
+        <div className="text-[12px] text-ink-dim italic">No matching APIs.</div>
+      ) : (
+        <>
+          <ul className="space-y-1.5">
+            {matches.map((m) => (
+              <li key={m.slug}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const firstPath = (m.description ?? "").split(" · ")[0]?.split(" ").pop() ?? "";
+                    const prompt = `Use the ${m.slug} API (${m.name})${firstPath ? ` at ${firstPath}` : ""} to `;
+                    window.dispatchEvent(new CustomEvent("chat:prefill", { detail: prompt }));
+                  }}
+                  className="w-full rounded border border-border/60 bg-elevated/30 p-2 text-left transition hover:border-accent/50 hover:bg-elevated/60"
+                >
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-[13px] font-medium text-ink">{m.name}</span>
+                    <span className="font-mono text-[10.5px] text-accent">{m.slug}</span>
+                    <span className="ml-auto font-mono text-[10px] text-ink-muted">{m.endpoint_count} eps</span>
+                  </div>
+                  {m.description && <div className="mt-0.5 text-[11.5px] text-ink-dim leading-snug">{m.description}</div>}
+                </button>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-2 text-[10.5px] italic text-ink-muted">
+            Click any API to prefill a prompt, or just ask: &ldquo;use <span className="font-mono not-italic text-ink-dim">{matches[0]?.slug}</span> to do X&rdquo; — I&rsquo;ll chain to the right endpoint.
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -4,6 +4,7 @@ interface ApolloSearchArgs {
   q_keywords?: string;
   person_titles?: string[];
   person_seniorities?: string[];
+  organization_domains?: string[];
   organization_locations?: string[];
   person_locations?: string[];
   max_results?: number;
@@ -40,7 +41,12 @@ const apollo: ToolModule = {
         properties: {
           q_keywords: {
             type: "string",
-            description: "Free-text keyword filter (e.g. company name, technology, theme).",
+            description: "Free-text keyword filter (technology, theme, project name). DO NOT use this for company targeting — use organization_domains instead, which is a hard filter rather than fuzzy keyword match.",
+          },
+          organization_domains: {
+            type: "array",
+            items: { type: "string" },
+            description: "Canonical company filter — pass the company's primary domain(s) (e.g. ['vercel.com', 'stripe.com']). ALWAYS use this when the user asks for people at a specific company; do not stuff the company name into q_keywords.",
           },
           person_titles: {
             type: "array",
@@ -116,6 +122,7 @@ const apollo: ToolModule = {
     if (args.q_keywords) searchBody.q_keywords = args.q_keywords;
     if (args.person_titles?.length) searchBody.person_titles = args.person_titles;
     if (args.person_seniorities?.length) searchBody.person_seniorities = args.person_seniorities;
+    if (args.organization_domains?.length) searchBody.q_organization_domains_list = args.organization_domains;
     if (args.organization_locations?.length) searchBody.organization_locations = args.organization_locations;
     if (args.person_locations?.length) searchBody.person_locations = args.person_locations;
 
@@ -153,9 +160,13 @@ const apollo: ToolModule = {
     if (enrichN > 0) {
       const enrichResults = await Promise.all(
         limited.slice(0, enrichN).map(async (p, idx) => {
+          // Reveal personal email + phone so the enriched card actually shows
+          // something. Apollo bills extra per reveal but this is the whole
+          // point of enrichment — without it the UI shows just an "enriched"
+          // tag with no actual contact info.
           const matchBody: Record<string, unknown> = {
-            reveal_personal_emails: false,
-            reveal_phone_number: false,
+            reveal_personal_emails: true,
+            reveal_phone_number: true,
           };
           if (p.linkedin_url) {
             matchBody.linkedin_url = p.linkedin_url;

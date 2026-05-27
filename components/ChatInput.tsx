@@ -101,6 +101,24 @@ export function ChatInput({ onSubmit, isGenerating, onStop, disabled }: ChatInpu
     return () => window.removeEventListener("paste", onPaste);
   }, []);
 
+  // External prefill — DiscoverCard rows dispatch chat:prefill to ask us to
+  // seed the input with a templated prompt the user can then edit + send.
+  useEffect(() => {
+    const onPrefill = (e: Event) => {
+      const detail = (e as CustomEvent<string>).detail;
+      if (typeof detail !== "string") return;
+      setText(detail);
+      requestAnimationFrame(() => {
+        const ta = textareaRef.current;
+        if (!ta) return;
+        ta.focus();
+        ta.setSelectionRange(detail.length, detail.length);
+      });
+    };
+    window.addEventListener("chat:prefill", onPrefill);
+    return () => window.removeEventListener("chat:prefill", onPrefill);
+  }, []);
+
   const handleFiles = useCallback((files: File[]) => {
     const next: Attachment[] = files.slice(0, 6).map((f) => {
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;

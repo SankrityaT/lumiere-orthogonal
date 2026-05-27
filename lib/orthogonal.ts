@@ -141,13 +141,19 @@ export class OrthogonalClient {
     }
   }
 
-  /** Wraps /v1/search — natural-language API discovery */
+  /** Wraps /v1/search — natural-language API discovery.
+   *  POST with body { prompt }; server returns { success, results: [...] }. */
   async search(query: string): Promise<RunResult> {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 10_000);
     try {
-      const res = await fetch(`${BASE_URL}/v1/search?q=${encodeURIComponent(query)}`, {
-        headers: { Authorization: `Bearer ${this.apiKey}` },
+      const res = await fetch(`${BASE_URL}/v1/search`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ prompt: query }),
         signal: ctrl.signal,
       });
       const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;

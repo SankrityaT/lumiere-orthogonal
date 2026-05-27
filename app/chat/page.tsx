@@ -172,6 +172,21 @@ export default function Home() {
     setActiveId(c.id);
   }, [activeId, conversations]);
 
+  // ⌘K / Ctrl+K → new conversation. (⌘N is intercepted by macOS browsers
+  // for "new window" and can't be overridden via preventDefault.)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const isMod = e.metaKey || e.ctrlKey;
+      if (!isMod) return;
+      if (e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        onNewConversation();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onNewConversation]);
+
   const onSelectConversation = useCallback((id: string) => {
     setActiveId(id);
   }, []);

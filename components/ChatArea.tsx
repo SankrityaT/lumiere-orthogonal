@@ -226,25 +226,52 @@ export function ChatArea({
   // (the raw Orthogonal payload) so the divergence is real.
   useEffect(() => {
     if (!conversation?.id || isGenerating) return;
+    // Skip fetch for empty conversations — no chat has fired yet, so nothing
+    // is in the DB. Avoids hammering /api/context-stats with retries that
+    // will all 404 anyway.
+    if (!conversation.messages || conversation.messages.length === 0) {
+      setVerified(null);
+      return;
+    }
     const cid = conversation.id;
     let cancelled = false;
+
+    // persistTurn fires via waitUntil AFTER stream.close() — it's still in
+    // flight when the client first hits /api/context-stats and gets a 404.
+    // Retry with exponential-ish backoff so the stats show up once the writes
+    // land. Caps at 5 attempts (~6 seconds) which is well beyond p99 persist time.
+    const delays = [0, 400, 800, 1500, 2500];
+
     (async () => {
-      try {
-        const res = await fetch(
-          `/api/context-stats?conversationId=${encodeURIComponent(cid)}`,
-          { credentials: "include" },
-        );
-        if (!res.ok) {
-          if (!cancelled) setVerified(null);
-          return;
+      for (let attempt = 0; attempt < delays.length; attempt++) {
+        if (delays[attempt] > 0) {
+          await new Promise((r) => setTimeout(r, delays[attempt]));
         }
-        const json = (await res.json()) as { ok?: boolean; totals?: typeof verified };
         if (cancelled) return;
-        if (json.ok && json.totals) setVerified(json.totals);
-        else setVerified(null);
-      } catch {
-        if (!cancelled) setVerified(null);
+        try {
+          const res = await fetch(
+            `/api/context-stats?conversationId=${encodeURIComponent(cid)}`,
+            { credentials: "include" },
+          );
+          if (res.status === 404) {
+            // persist may not have landed yet; loop will retry.
+            continue;
+          }
+          if (!res.ok) {
+            if (!cancelled) setVerified(null);
+            return;
+          }
+          const json = (await res.json()) as { ok?: boolean; totals?: typeof verified };
+          if (cancelled) return;
+          if (json.ok && json.totals) {
+            setVerified(json.totals);
+            return;
+          }
+        } catch {
+          // network blip; let the retry loop have another swing
+        }
       }
+      // out of attempts — leave verified as the last-known good state
     })();
     return () => {
       cancelled = true;

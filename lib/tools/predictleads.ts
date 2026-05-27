@@ -95,13 +95,46 @@ const company_signals: ToolModule = {
     const totalCost = calls.reduce((acc, c) => acc + c.result.priceCents, 0);
     const errors = out.filter((o) => !o.result.ok).map((o) => `${o.kind}: ${o.result.error}`);
 
-    // Normalize each
+    // Normalize each. PredictLeads returns JSON:API shape — news article URLs
+    // live in the top-level `included` array referenced from each event's
+    // `relationships.most_relevant_source.data.id`. Resolve the join here so
+    // the card can render flat clickable links without knowing JSON:API.
     const normalized: Record<SignalKind, unknown[]> = { financing: [], jobs: [], news: [] };
     for (const o of out) {
       if (!o.result.ok) continue;
-      const data = o.result.data as { data?: unknown[] } | unknown[];
+      const data = o.result.data as { data?: unknown[]; included?: unknown[] } | unknown[];
       const items = Array.isArray(data) ? data : data?.data ?? [];
-      normalized[o.kind] = items.slice(0, limit);
+      const included = Array.isArray(data) ? [] : ((data?.included as unknown[]) ?? []);
+
+      // Build id → news_article URL/title map
+      const articleById = new Map<string, { url?: string; title?: string }>();
+      for (const inc of included) {
+        const incObj = inc as { id?: string; type?: string; attributes?: { url?: string; title?: string } };
+        if (incObj.type === "news_article" && incObj.id) {
+          articleById.set(incObj.id, {
+            url: incObj.attributes?.url,
+            title: incObj.attributes?.title,
+          });
+        }
+      }
+
+      // For news events, inject source_url + article_title into attributes
+      // For financing events, source_urls[] is already present in attributes
+      const enriched = (items as Array<Record<string, unknown>>).slice(0, limit).map((item) => {
+        if (o.kind !== "news") return item;
+        const rels = item.relationships as Record<string, { data?: { id?: string } }> | undefined;
+        const articleId = rels?.most_relevant_source?.data?.id;
+        if (!articleId) return item;
+        const article = articleById.get(articleId);
+        if (!article?.url) return item;
+        const attrs = (item.attributes as Record<string, unknown>) ?? {};
+        return {
+          ...item,
+          attributes: { ...attrs, source_url: article.url, article_title: article.title },
+        };
+      });
+
+      normalized[o.kind] = enriched;
     }
 
     const llmContent = JSON.stringify({
