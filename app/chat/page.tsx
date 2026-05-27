@@ -166,7 +166,14 @@ export default function Home() {
     const c = createNew();
     loadedMessagesFor.current.add(c.id); // fresh conversation has nothing to load
     setConversations((cur) => {
-      const cleaned = cur.filter((conv) => conv.messages.length > 0);
+      // Only drop the *previously active* conversation if it's an empty placeholder.
+      // Do NOT filter every conversation with messages.length === 0: server-loaded
+      // sidebar summaries start with an empty messages[] until lazy-loaded on click,
+      // so a blanket filter would nuke unhydrated chats from the sidebar (they'd
+      // reappear after a reload, which looked to the user like data loss).
+      const cleaned = cur.filter(
+        (conv) => !(conv.id === activeId && conv.messages.length === 0),
+      );
       return [...cleaned, c];
     });
     setActiveId(c.id);
