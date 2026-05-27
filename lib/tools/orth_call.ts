@@ -83,7 +83,7 @@ const orth_call: ToolModule = {
     }
 
     const calls: ToolCallTrace[] = [];
-    const r = await ctx.call({
+    let r = await ctx.call({
       api: args.api,
       path,
       query,
@@ -92,6 +92,49 @@ const orth_call: ToolModule = {
       cacheTier: "default",
     });
     calls.push({ callId: r.callId, api: args.api, path, args: { query, body: args.body }, result: r });
+
+    // Defensive: a 422 on a discovered endpoint usually means the model guessed
+    // the wrong query param name. Different providers use different names for
+    // "the website you want me to look up" — Tomba wants `domain`, Hunter wants
+    // `domain`, BuiltWith wants `url`, some want `website`. If our first call
+    // had one of those keys and 422'd, retry once swapping aliases instead of
+    // dying. Bounded to one extra hop so we don't burn calls in a loop.
+    const PARAM_ALIASES: Record<string, string[]> = {
+      url: ["domain", "website"],
+      domain: ["url", "website"],
+      website: ["url", "domain"],
+    };
+    if (!r.ok && /\b422\b/.test(r.error ?? "") && query) {
+      const keyToSwap = Object.keys(query).find((k) => k in PARAM_ALIASES);
+      if (keyToSwap) {
+        for (const altName of PARAM_ALIASES[keyToSwap]) {
+          if (altName in query) continue;
+          const altQuery: Record<string, unknown> = { ...query };
+          altQuery[altName] = altQuery[keyToSwap];
+          delete altQuery[keyToSwap];
+          const retry = await ctx.call({
+            api: args.api,
+            path,
+            query: altQuery,
+            body: args.body,
+            method: args.method,
+            cacheTier: "default",
+          });
+          calls.push({
+            callId: retry.callId,
+            api: args.api,
+            path,
+            args: { query: altQuery, body: args.body, _retryFor: r.error },
+            result: retry,
+          });
+          if (retry.ok) {
+            r = retry;
+            query = altQuery;
+            break;
+          }
+        }
+      }
+    }
 
     if (!r.ok) {
       return {

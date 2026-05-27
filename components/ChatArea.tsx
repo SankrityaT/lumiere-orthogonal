@@ -85,9 +85,9 @@ function CostMeter({ cents }: { cents: number }) {
   return (
     <div
       className="hidden md:flex flex-col items-end gap-0.5 text-[10px] text-ink-muted"
-      title="Sum of Orthogonal API costs this conversation"
+      title="Total Orthogonal tool-API spend this conversation (Apollo, PredictLeads, Tavily, AgentMail, etc., billed per call). Separate from OpenAI prompt-token cost shown in the 'openai saved' meter."
     >
-      <span className="font-mono uppercase tracking-[0.14em]">cost</span>
+      <span className="font-mono uppercase tracking-[0.14em]">tool cost</span>
       <span className="font-mono tabular-nums text-ink-dim">${dollars}</span>
     </div>
   );
@@ -109,11 +109,11 @@ function SavedMeter({
       className="hidden md:flex flex-col items-end gap-0.5 text-[10px] text-ink-muted"
       title={
         wouldHaveCrashed
-          ? `A naive chatbot would have CRASHED on this conversation (exceeded model_max). We sent ${savedTokens.toLocaleString()} fewer tokens (saved $${savedUsd.toFixed(6)}).`
-          : `${savedTokens.toLocaleString()} fewer tokens sent vs a naive chatbot. Saved $${savedUsd.toFixed(6)} on this conversation's input. Numbers from /api/context-stats — pulled from real tool_calls.response rows.`
+          ? `OpenAI prompt-token savings. A naive chatbot (no compaction) would have CRASHED on this conversation by exceeding the model's input limit. Our 4-layer context strategy sent ${savedTokens.toLocaleString()} fewer tokens, saving $${savedUsd.toFixed(6)} of OpenAI input cost. Separate from the Orthogonal tool spend shown in the "cost" meter — that one tracks API calls (Apollo, PredictLeads, etc.), this one tracks LLM input compute.`
+          : `OpenAI prompt-token savings. ${savedTokens.toLocaleString()} fewer tokens sent to GPT vs a naive chatbot. Saved $${savedUsd.toFixed(6)} of OpenAI input cost. This is the LLM compute side. The "cost" meter separately tracks Orthogonal tool calls (Apollo, PredictLeads, Tavily, etc.) which are billed per API hit. Numbers pulled live from tool_calls.response rows.`
       }
     >
-      <span className="font-mono uppercase tracking-[0.14em]">saved vs naive</span>
+      <span className="font-mono uppercase tracking-[0.14em]">openai saved</span>
       <span className="flex items-baseline gap-1">
         <span
           className={`font-mono tabular-nums ${wouldHaveCrashed ? "text-accent-strong" : "text-accent"}`}

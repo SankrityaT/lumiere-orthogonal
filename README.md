@@ -284,6 +284,7 @@ EMAIL_SEND_ALLOWLIST=alice@partner.com,@trusted.co
 - **AgentMail polish.** Per-user inbox creation, inbox switcher in settings, draft history, threading. Today's send is one-shot with a shared inbox.
 - **Model routing via Vercel AI Gateway.** Currently hard-coded to `gpt-5-mini`. The Gateway would let us fall back to Claude or Gemini on rate limits without code changes.
 - **CSV / Notion export.** Sales people want to dump an Apollo search to a sheet. Two endpoints + one button.
+- **Orthogonal Skills.** Orthogonal exposes a `GET /v1/skills` endpoint (returns installable agent skills like `orthogonal/find-skill` and others) that I didn't wire up for the take-home. Loading skills alongside the API catalog would give the agent a second axis of capability discovery: not just "which provider can answer this" (the catalog) but "which prepackaged skill / agent recipe handles this end-to-end" (skills). Same lazy-load pattern as L0: register one discover tool, fetch on demand.
 
 ---
 
