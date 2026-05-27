@@ -329,45 +329,41 @@ function SignalColumn({
         <ul className="space-y-1.5">
           {items.slice(0, 4).map((item, i) => {
             const attrs = (item.attributes as Record<string, unknown>) ?? item;
-            // PredictLeads has 3 distinct response shapes per kind:
-            // - jobs: title / job_title / categories
-            // - financing: amount + category + funding_type (no title field)
-            // - news: news_title / article_title / description
-            const fmtCategory = (s: string) =>
-              s
-                .split("_")
-                .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-                .join(" ");
+            // Real PredictLeads field shapes (verified live):
+            //   financing_event:  financing_type ('Series G'), categories[], amount, effective_date, source_urls[]
+            //   news_event:       summary, article_sentence, category ('integrates_with'), found_at, source_urls[]
+            //   job_opening:      title, categories, location, salary, url
             let title: string;
             if (kind === "financing") {
-              const cat = (attrs.category as string) ?? (attrs.funding_type as string);
-              title = cat ? fmtCategory(cat) : "Funding event";
+              title =
+                (attrs.financing_type as string) ??
+                (attrs.financing_type_normalized as string)?.replace(/_/g, " ") ??
+                "Funding event";
             } else if (kind === "news") {
               title =
-                (attrs.news_title as string) ??
-                (attrs.article_title as string) ??
+                (attrs.summary as string) ??
+                (attrs.article_sentence as string) ??
                 (attrs.title as string) ??
-                (attrs.headline as string) ??
-                (attrs.description as string) ??
                 "News item";
             } else {
               title = (attrs.title as string) ?? (attrs.job_title as string) ?? "—";
             }
             const date =
+              (attrs.effective_date as string) ??
               (attrs.found_at as string) ??
               (attrs.first_seen_at as string) ??
               (attrs.published_at as string) ??
               "";
             const amount = kind === "financing" ? (attrs.amount as string) ?? (attrs.amount_normalized as string) : null;
-            // PredictLeads varies: jobs have url/landing_page_url,
-            // financing has news_url/source_url, news has news_url/url.
+            // source_urls is an array; fall back to legacy singular fields if a different provider response landed here.
+            const sourceUrls = (attrs.source_urls as string[]) ?? null;
             const href =
-              (attrs.news_url as string) ??
+              (sourceUrls && sourceUrls[0]) ??
               (attrs.url as string) ??
               (attrs.source_url as string) ??
+              (attrs.news_url as string) ??
               (attrs.landing_page_url as string) ??
               (attrs.application_url as string) ??
-              (attrs.link as string) ??
               null;
             const Inner = (
               <>
